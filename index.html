@@ -2415,15 +2415,17 @@
          Jordan's ask (2026-08-14). Two things make it a separate tab rather
          than five more columns on the one above: the columns are a different
          path through the company, and it answers for a different set of people
-         (Regional Managers and upwards — Field Managers don't recruit).
+         (Regional Managers and upwards, plus Recruiting Specialists — Field
+         Managers don't recruit).
 
          It shares every render function with the Training/TOSD board — see
          ROSTER_BOARDS — so the two can't drift apart in look or behaviour. -->
     <section id="tab-recruiting" class="hidden">
       <span class="pill">DECO | Recruiting Dashboard</span>
       <div class="note">
-        <strong>Who's on this list:</strong> Regional Managers and upwards. Field Managers don't recruit, so
-        they're left off — everyone else on the Roster is here, including any role added later.
+        <strong>Who's on this list:</strong> Regional Managers and upwards, plus Recruiting Specialists. Field
+        Managers don't recruit, so they're left off — everyone else on the Roster is here, including any role
+        added later.
         <br><strong>Changing a status:</strong> click any badge to change it — it writes straight back to the
         Roster sheet, and asks you to click again to confirm.
         <br><strong>All five of these certify from a grade.</strong>
@@ -4756,6 +4758,59 @@ function allRosterRegions() {
   }));
   return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
+
+/* ---------------- Roles the picker offers before anyone holds one ----------------
+   The Role column is otherwise pure data: every list, filter, count and board
+   membership in this app is built from whatever the Roster sheet already says,
+   which is what lets a role appear the day somebody is given it. This constant
+   is the one exception, and it exists for exactly one reason.
+
+   A role DECO has CREATED but not yet FILLED is unreachable from the picker, so
+   it has to be typed in by hand on the first person — and then on the second,
+   and the third. Two spellings of one role ("Recruiting Specialist" /
+   "recruiting specialists") become two rows on the stat strip, two entries in
+   the role filter, and a person quietly missing from the group they belong in.
+   That is the same failure the Region picker exists to prevent; offering the
+   spelling once is what stops it.
+
+   NOTHING about who is included anywhere reads this list. A Recruiting
+   Specialist lands on the Recruiting Dashboard because isRecruitingRole() only
+   excludes field managers — not because the role is named here — and is absent
+   from the Grader picker because GRADER_ROLE_KEYWORDS doesn't name it (Jordan,
+   asked and answered 2026-09-01: graders stay district and operations managers,
+   and the "+ Someone not listed…" box covers the exception). So adding a role
+   here changes what can be TYPED, never what anything decides. */
+const KNOWN_ROLES = ['Recruiting Specialist'];
+
+/* Every role the Add person picker should offer: what the Roster already uses,
+   plus the known ones above.
+
+   De-duplicated case-insensitively and with whitespace collapsed, and the
+   Roster's own rows go in FIRST so the sheet's spelling always wins — a sheet
+   that says "recruiting specialist" keeps that, rather than gaining a
+   near-duplicate option beside it that would split the group in two. Which is
+   the whole point of the list, so getting that precedence backwards would
+   defeat it.
+
+   Deliberately NOT used by the role FILTER above the table: a filter option
+   matching nobody is a dead end that returns "No matching people", where an
+   unfilled option in Add person is the entire feature. */
+function allRosterRoles() {
+  const out = [];
+  const seen = new Set();
+  const add = (value) => {
+    const role = (value || '').replace(/\s+/g, ' ').trim();
+    if (!role) return;
+    const key = role.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(role);
+  };
+  rosterRows.forEach(r => add(r['Role']));
+  KNOWN_ROLES.forEach(add);
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
 /* Where the roster stands, drawn above it. Everything is counted from
    rosterRows / followUpItems, both of which are already in memory — this must
    never trigger a read of its own, and must never say anything the table below
@@ -5262,9 +5317,11 @@ function populateAddPersonChoices() {
     const keep = sel.value;
     // Regions include the areas people cover, so an operations manager's whole
     // province is pickable for the next person too.
+    // Roles include ones DECO has created but nobody holds yet (KNOWN_ROLES), so
+    // a new position can be picked rather than re-typed onto every person.
     const values = column === 'Region'
       ? allRosterRegions()
-      : [...new Set(rosterRows.map(r => (r[column] || '').trim()).filter(Boolean))].sort();
+      : allRosterRoles();
     sel.innerHTML = `<option value="">Pick a ${word}…</option>` +
       values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('') +
       `<option value="${ADD_PERSON_NEW_VALUE}">+ A ${word} that isn't listed…</option>`;
