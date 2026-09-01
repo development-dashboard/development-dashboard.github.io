@@ -2356,12 +2356,19 @@
         <!-- Adding someone writes a new row straight to the Roster sheet.
              Inline under the toolbar rather than in a dialog, the same reason the
              certify preview and the out-of-order warning are inline: the table
-             it's about stays on screen while it's being filled in. -->
+             it's about stays on screen while it's being filled in.
+
+             There is ONE form and it MOVES between the two boards — it is
+             appended into whichever board's host div was asked for it. Both
+             boards write to the same Roster sheet and differ only in which
+             roles they offer, so a second copy of this markup would be two sets
+             of ids, two sets of listeners and two things to keep in step, which
+             is the drift ROSTER_BOARDS exists to avoid. See toggleAddPersonForm. -->
+        <div id="dashboard-add-person-host">
         <form id="add-person-form" class="add-person-form hidden" autocomplete="off">
           <p class="add-person-title">Add someone to the Roster</p>
-          <p class="add-person-sub">This writes a new row to the Roster sheet. Every training step and both
-            certifications start at <strong>Pending</strong> — tick them off on the table below once they're
-            done. Get the name right: the rest of the app matches a graded session to a person by name, so a
+          <p class="add-person-sub">This writes a new row to the Roster sheet. <span id="ap-board-note"></span>
+            Get the name right: the rest of the app matches a graded session to a person by name, so a
             name spelled differently here won't line up with their recordings, and two people can't share one.</p>
           <div class="add-person-grid">
             <div class="field">
@@ -2394,6 +2401,7 @@
             <span id="ap-error" class="add-person-error" role="alert"></span>
           </div>
         </form>
+        </div>
         <!-- A roster edit writes to a Sheet nobody is looking at, so both
              outcomes are said out loud here: a failure in the loud alert-bar
              shell (which also scrolls itself into view, since the badge that
@@ -2438,7 +2446,9 @@
         signs nobody off. They still show up under a person's name when you open their row.
         <br><strong>A passing AI grade never ticks anything here</strong>, on any of the five. Only a grade a
         human signed off moves these columns.
-        <br><strong>Adding someone</strong> is on the Training/TOSD Dashboard tab, which lists the whole Roster.
+        <br><strong>Adding someone:</strong> use <em>+ Add person</em> here — it's the only place a recruiting-only
+        role like Recruiting Specialist can be picked. The button on the Training/TOSD Dashboard adds to the same
+        Roster and offers every other role.
       </div>
       <p id="recruiting-stats-scope" class="stat-scope"></p>
       <div id="recruiting-stats" class="stat-strip" aria-live="polite"></div>
@@ -2448,9 +2458,18 @@
           <select id="rc-filter-role"><option value="">All roles</option></select>
           <input id="rc-filter-search" type="text" placeholder="Search name…">
           <div class="filter-actions">
+            <!-- Same form as the Training/TOSD board — it moves here when this
+                 button opens it. What differs is the role list: recruiting-only
+                 roles (Recruiting Specialist) are offered here and nowhere else.
+                 See RECRUITING_ONLY_ROLES. -->
+            <button type="button" id="rc-add-person-btn" class="btn add-person-btn" aria-expanded="false" aria-controls="add-person-form">
+              <span class="plus" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M10 4.4v11.2M4.4 10h11.2" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></span>
+              <span class="add-person-label">Add person</span>
+            </button>
             <button id="refresh-recruiting-btn" class="btn secondary">Refresh</button>
           </div>
         </div>
+        <div id="recruiting-add-person-host"></div>
         <!-- Raised when the Roster is missing some of the five recruiting
              certification columns. Without them every badge here is a dead
              "Not yet" that can't be clicked, so the bar says exactly which
@@ -4009,8 +4028,14 @@ const ROSTER_BOARDS = {
       stats: 'dashboard-stats', scope: 'dashboard-stats-scope',
       region: 'filter-region', role: 'filter-role', search: 'filter-search',
       certCatchup: 'dashboard-cert-catchup',
-      editError: 'dashboard-edit-error', editStatus: 'dashboard-edit-status'
+      editError: 'dashboard-edit-error', editStatus: 'dashboard-edit-status',
+      addBtn: 'add-person-btn', addHost: 'dashboard-add-person-host'
     },
+    // What starts at Pending on THIS board, said in the form itself. The two
+    // boards track different columns, so one sentence covering both would be
+    // wrong on each.
+    addPersonNote: 'Every training step and both certifications start at <strong>Pending</strong> — tick them ' +
+      'off on the table below once they’re done.',
     statusColumns: [
       ['Day 1 - Meeting Attended', 'flag'],
       ['Day 1 - Training Watched', 'flag'],
@@ -4041,8 +4066,11 @@ const ROSTER_BOARDS = {
       stats: 'recruiting-stats', scope: 'recruiting-stats-scope',
       region: 'rc-filter-region', role: 'rc-filter-role', search: 'rc-filter-search',
       certCatchup: 'recruiting-cert-catchup',
-      editError: 'recruiting-edit-error', editStatus: 'recruiting-edit-status'
+      editError: 'recruiting-edit-error', editStatus: 'recruiting-edit-status',
+      addBtn: 'rc-add-person-btn', addHost: 'recruiting-add-person-host'
     },
+    addPersonNote: 'All five recruiting certifications start at <strong>Pending</strong> — tick them off on ' +
+      'the table below once they’re done. Their field-training steps are on the Training/TOSD Dashboard.',
     statusColumns: RECRUITING_CERT_COLUMNS.map(c => [c, 'cert']),
     includes: (person) => isRecruitingRole(person['Role']),
     sessionTypes: RECRUITING_SESSION_TYPES,
@@ -4759,31 +4787,46 @@ function allRosterRegions() {
   return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
-/* ---------------- Roles the picker offers before anyone holds one ----------------
-   The Role column is otherwise pure data: every list, filter, count and board
-   membership in this app is built from whatever the Roster sheet already says,
-   which is what lets a role appear the day somebody is given it. This constant
-   is the one exception, and it exists for exactly one reason.
+/* ---------------- Roles that belong to the recruiting side only ----------------
+   Jordan, 2026-09-01: "recruiting specialist is only for recruiting." The Role
+   column is otherwise pure data — every list, filter, count and board membership
+   is built from whatever the Roster sheet already says, which is what lets a
+   role appear the day somebody is given it. This constant is the one exception,
+   and it does two SEPARATE jobs that are easy to collapse into one by mistake:
 
-   A role DECO has CREATED but not yet FILLED is unreachable from the picker, so
-   it has to be typed in by hand on the first person — and then on the second,
-   and the third. Two spellings of one role ("Recruiting Specialist" /
-   "recruiting specialists") become two rows on the stat strip, two entries in
-   the role filter, and a person quietly missing from the group they belong in.
-   That is the same failure the Region picker exists to prevent; offering the
-   spelling once is what stops it.
+   - The Recruiting Dashboard's Add person picker OFFERS these even when nobody
+     holds one yet, so a position DECO has created but not filled can be picked
+     rather than typed onto the first person by hand, and the second, and the
+     third. Two spellings of one role ("Recruiting Specialist" / "recruiting
+     specialists") become two rows on the stat strip, two entries in the role
+     filter, and people split across a group that should be one — the same
+     failure the Region picker exists to prevent.
+   - The Training/TOSD picker HIDES them, and keeps hiding them once somebody
+     holds one. This is the half that needs the constant: a purely data-driven
+     list would put the role straight back the moment the first Recruiting
+     Specialist existed, which is exactly what hiding it is meant to stop.
 
-   NOTHING about who is included anywhere reads this list. A Recruiting
-   Specialist lands on the Recruiting Dashboard because isRecruitingRole() only
-   excludes field managers — not because the role is named here — and is absent
-   from the Grader picker because GRADER_ROLE_KEYWORDS doesn't name it (Jordan,
-   asked and answered 2026-09-01: graders stay district and operations managers,
-   and the "+ Someone not listed…" box covers the exception). So adding a role
-   here changes what can be TYPED, never what anything decides. */
-const KNOWN_ROLES = ['Recruiting Specialist'];
+   NOTHING about who is SHOWN reads this list. A Recruiting Specialist still
+   appears on both boards' tables — the Training/TOSD board is deliberately the
+   whole Roster — and lands on the Recruiting Dashboard because isRecruitingRole()
+   only excludes field managers, not because the role is named here. They are
+   absent from the Grader picker because GRADER_ROLE_KEYWORDS doesn't name them
+   (Jordan's call; the "+ Someone not listed…" box covers the exception). So this
+   governs what can be TYPED into a new row, never what anything decides. */
+const RECRUITING_ONLY_ROLES = ['Recruiting Specialist'];
 
-/* Every role the Add person picker should offer: what the Roster already uses,
-   plus the known ones above.
+/* Matched the way every other role test in this file matches — lower-cased,
+   whitespace collapsed, as a substring — so "Senior Recruiting Specialist" and a
+   stray trailing space land with the role they belong to. Roles are typed into
+   the Roster by hand, and an exact match would quietly mis-file them. */
+function isRecruitingOnlyRole(role) {
+  const r = (role || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return RECRUITING_ONLY_ROLES.some(k => r.includes(k.toLowerCase()));
+}
+
+/* Every role the Add person picker should offer for a given board: what the
+   Roster already uses, minus the recruiting-only ones, plus those back again on
+   the recruiting board.
 
    De-duplicated case-insensitively and with whitespace collapsed, and the
    Roster's own rows go in FIRST so the sheet's spelling always wins — a sheet
@@ -4792,22 +4835,28 @@ const KNOWN_ROLES = ['Recruiting Specialist'];
    the whole point of the list, so getting that precedence backwards would
    defeat it.
 
-   Deliberately NOT used by the role FILTER above the table: a filter option
+   Defaults to the narrower list when no board is passed. The form is only ever
+   populated with one, but hiding a role by accident is a recoverable mistake
+   where offering one on the wrong board is the thing being fixed.
+
+   Deliberately NOT used by the role FILTER above either table: a filter option
    matching nobody is a dead end that returns "No matching people", where an
    unfilled option in Add person is the entire feature. */
-function allRosterRoles() {
+function allRosterRoles(board) {
+  const recruitingBoard = !!board && board.key === 'recruiting';
   const out = [];
   const seen = new Set();
   const add = (value) => {
     const role = (value || '').replace(/\s+/g, ' ').trim();
     if (!role) return;
+    if (!recruitingBoard && isRecruitingOnlyRole(role)) return;
     const key = role.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
     out.push(role);
   };
   rosterRows.forEach(r => add(r['Role']));
-  KNOWN_ROLES.forEach(add);
+  if (recruitingBoard) RECRUITING_ONLY_ROLES.forEach(add);
   return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
@@ -5311,17 +5360,19 @@ function addPersonForm() { return document.getElementById('add-person-form'); }
 // every roster load, keeping anything half-picked — a Refresh mid-form shouldn't
 // empty it.
 function populateAddPersonChoices() {
+  // Which board the form is open for decides the role list — see allRosterRoles.
+  const board = addPersonBoardOrDefault();
   [['ap-role', 'Role', 'role'], ['ap-region', 'Region', 'region']].forEach(([id, column, word]) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const keep = sel.value;
     // Regions include the areas people cover, so an operations manager's whole
     // province is pickable for the next person too.
-    // Roles include ones DECO has created but nobody holds yet (KNOWN_ROLES), so
-    // a new position can be picked rather than re-typed onto every person.
+    // Roles are scoped to the board: the recruiting one offers positions DECO
+    // has created but nobody holds yet, and the other hides them entirely.
     const values = column === 'Region'
       ? allRosterRegions()
-      : allRosterRoles();
+      : allRosterRoles(board);
     sel.innerHTML = `<option value="">Pick a ${word}…</option>` +
       values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('') +
       `<option value="${ADD_PERSON_NEW_VALUE}">+ A ${word} that isn't listed…</option>`;
@@ -5354,23 +5405,66 @@ function addPersonChoice(selectId) {
   return box ? box.value.trim() : '';
 }
 
-function toggleAddPersonForm(open) {
-  const form = addPersonForm();
-  const btn = document.getElementById('add-person-btn');
-  if (!form || !btn) return;
-  const show = open === undefined ? form.classList.contains('hidden') : !!open;
-  form.classList.toggle('hidden', !show);
+/* Which board the form is currently open for, or null when it's closed. The
+   form itself is a single element that gets moved, so this is the only record
+   of which button opened it — and every message the submit produces (the status
+   line, the failure bar, the row that flashes) has to land on that same board,
+   not on whichever one happens to be hardcoded. */
+let addPersonBoard = null;
+
+// The narrower of the two when nothing is open, for the reason in allRosterRoles.
+function addPersonBoardOrDefault() { return addPersonBoard || ROSTER_BOARDS.dashboard; }
+
+function paintAddPersonButton(board, show) {
+  const btn = boardEl(board, 'addBtn');
+  if (!btn) return;
   btn.classList.toggle('open', show);
   btn.setAttribute('aria-expanded', show ? 'true' : 'false');
   const label = btn.querySelector('.add-person-label');
   if (label) label.textContent = show ? 'Close' : 'Add person';
+}
+
+/* Open, close, or move the one form. `board` is which button was pressed;
+   omitted, it means the board it is already open for.
+
+   Both buttons are repainted every time, because the board being left behind
+   would otherwise keep saying "Close" over a form that is no longer under it. */
+function toggleAddPersonForm(board, open) {
+  const form = addPersonForm();
+  const target = board || addPersonBoardOrDefault();
+  const btn = boardEl(target, 'addBtn');
+  if (!form || !btn) return;
+  const openHere = !!addPersonBoard && addPersonBoard.key === target.key && !form.classList.contains('hidden');
+  const show = open === undefined ? !openHere : !!open;
+  const movingBoard = show && !!addPersonBoard && addPersonBoard.key !== target.key;
+  Object.values(ROSTER_BOARDS).forEach(b => paintAddPersonButton(b, false));
   if (show) {
+    // Cleared when it moves: the two boards offer different roles, so a
+    // recruiting-only role picked on one would be a value the other's list
+    // can't show — a select silently holding something not in its options.
+    if (movingBoard) resetAddPersonForm();
+    const host = boardEl(target, 'addHost');
+    if (host && form.parentElement !== host) host.appendChild(form);
+    addPersonBoard = target;
+    form.classList.remove('hidden');
+    paintAddPersonButton(target, true);
     showAddPersonError('');
+    renderAddPersonNote(target);
     populateAddPersonChoices();
     document.getElementById('ap-name').focus();
   } else {
+    form.classList.add('hidden');
+    addPersonBoard = null;
     resetAddPersonForm();
   }
+}
+
+// The one line of the form's copy that differs per board — what starts at
+// Pending. Everything else about adding a person is identical, including the
+// sheet it writes to.
+function renderAddPersonNote(board) {
+  const el = document.getElementById('ap-board-note');
+  if (el) el.innerHTML = board.addPersonNote;
 }
 
 function resetAddPersonForm() {
@@ -5391,6 +5485,10 @@ function showAddPersonError(message) {
 
 async function submitAddPerson() {
   if (addPersonBusy) return;
+  // Captured BEFORE anything can close the form: toggleAddPersonForm(…, false)
+  // clears addPersonBoard, so reading it afterwards would send the confirmation
+  // and the flashed row to the wrong board — or to none at all.
+  const board = addPersonBoardOrDefault();
   const nameInput = document.getElementById('ap-name');
   const roleSel = document.getElementById('ap-role');
   const regionSel = document.getElementById('ap-region');
@@ -5418,11 +5516,11 @@ async function submitAddPerson() {
   if (!region) return complain('Pick a region, or add one that isn’t listed.', regionSel.value === ADD_PERSON_NEW_VALUE ? document.getElementById('ap-region-new') : regionSel);
 
   showAddPersonError('');
-  showRosterEditError('');
-  showRosterEditStatus('');
+  showRosterEditError('', '', board);
+  showRosterEditStatus('', board);
   const submitBtn = document.getElementById('ap-submit');
   const cancelBtn = document.getElementById('ap-cancel');
-  const openBtn = document.getElementById('add-person-btn');
+  const openBtn = boardEl(board, 'addBtn');
   const submitLabel = submitBtn.textContent;
   addPersonBusy = true;
   [submitBtn, cancelBtn, openBtn].forEach(b => { if (b) b.disabled = true; });
@@ -5434,11 +5532,11 @@ async function submitAddPerson() {
     // their row depends on.
     await loadRoster();
     addPersonBusy = false;
-    toggleAddPersonForm(false);
-    flashRosterRow(name);
-    showRosterEditStatus(addedPersonConfirmation(name, role, region, covers));
+    toggleAddPersonForm(board, false);
+    flashRosterRow(name, board);
+    showRosterEditStatus(addedPersonConfirmation(name, role, region, covers, board), board);
   } catch (e) {
-    showRosterEditError(`Couldn’t add ${name} to the Roster — ${e.message}`, 'That new person didn’t reach the Roster');
+    showRosterEditError(`Couldn’t add ${name} to the Roster — ${e.message}`, 'That new person didn’t reach the Roster', board);
     // Deliberately not "nothing was added": an append that goes through and then
     // reads back wrong may well have left a row behind, and this can't tell.
     // Saying so is what sends someone to look at the Sheet before retrying.
@@ -5505,17 +5603,18 @@ function addPersonCoversValue(region) {
     .join(', ');
 }
 
-function addedPersonConfirmation(name, role, region, covers) {
+function addedPersonConfirmation(name, role, region, covers, board) {
+  const target = board || ROSTER_BOARDS.dashboard;
   let msg = `Added ${name} (${role}, ${region}${covers ? ', also covers ' + covers : ''}) to the Roster — ` +
     'every step starts at Pending. Click the badges on their row to tick things off.';
   // A new person in BC3 added while the table is filtered to BC1 is a row that
   // never appears, which reads as a failed save. Say why instead.
-  if (!rosterRowOnScreen(name)) msg += ' The filters you have set are hiding their row — clear them to see it.';
+  if (!rosterRowOnScreen(name, target)) msg += ' The filters you have set are hiding their row — clear them to see it.';
   return msg;
 }
 
-function rosterRowOnScreen(name) {
-  const wrap = document.getElementById('dashboard-table-wrap');
+function rosterRowOnScreen(name, board) {
+  const wrap = boardEl(board || ROSTER_BOARDS.dashboard, 'wrap');
   if (!wrap) return false;
   // Compared as an attribute rather than in a selector, since a name can
   // contain an apostrophe.
@@ -5526,8 +5625,8 @@ function rosterRowOnScreen(name) {
 // name most of a screen away from the button that added them. Plain scroll, no
 // behavior:'smooth', for the recorded reason: smooth scrolling is a silent
 // no-op in some browsers.
-function flashRosterRow(name) {
-  const wrap = document.getElementById('dashboard-table-wrap');
+function flashRosterRow(name, board) {
+  const wrap = boardEl(board || ROSTER_BOARDS.dashboard, 'wrap');
   if (!wrap) return;
   const row = [...wrap.querySelectorAll('tr.roster-row')].find(el => el.getAttribute('data-person') === name);
   if (!row) return;
@@ -5537,13 +5636,20 @@ function flashRosterRow(name) {
   justAddedTimer = setTimeout(() => row.classList.remove('just-added'), 6000);
 }
 
-document.getElementById('add-person-btn').addEventListener('click', () => toggleAddPersonForm());
-document.getElementById('ap-cancel').addEventListener('click', () => toggleAddPersonForm(false));
+// One listener per board's button, each passing its own board in. A button whose
+// board has no markup is simply skipped rather than throwing on page load.
+Object.values(ROSTER_BOARDS).forEach(board => {
+  const btn = boardEl(board, 'addBtn');
+  if (btn) btn.addEventListener('click', () => toggleAddPersonForm(board));
+});
+document.getElementById('ap-cancel').addEventListener('click', () => toggleAddPersonForm(undefined, false));
 document.getElementById('ap-role').addEventListener('change', () => syncAddPersonNewField('ap-role', true));
 document.getElementById('ap-region').addEventListener('change', () => syncAddPersonNewField('ap-region', true));
 addPersonForm().addEventListener('submit', (e) => { e.preventDefault(); submitAddPerson(); });
 addPersonForm().addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !addPersonBusy) toggleAddPersonForm(false);
+  // Undefined board, not false: the first argument is the board, and Escape
+  // means "close whichever one this is open for".
+  if (e.key === 'Escape' && !addPersonBusy) toggleAddPersonForm(undefined, false);
 });
 
 function checkIcon() { return '<svg viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
