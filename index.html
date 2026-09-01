@@ -2318,7 +2318,10 @@
     <section id="tab-dashboard">
       <span class="pill">DECO | Training / TOSD</span>
       <div class="note">
-        <strong>Certification rule:</strong> once someone has attended the Day 1 meeting/training and watched a
+        <strong>Who's on this list:</strong> everyone who does field training. Recruiting Specialists don't, so
+        they're left off — they're on the Recruiting Dashboard instead. Everyone else on the Roster is here,
+        including any role added later.
+        <br><strong>Certification rule:</strong> once someone has attended the Day 1 meeting/training and watched a
         team on-site day, they can go on team visits without being certified — but they can't run a training
         session themselves until they're certified on training days.
         <br><strong>Team on-site days take three:</strong> a full team on-site day is three to four separate site
@@ -4044,9 +4047,21 @@ const ROSTER_BOARDS = {
       ['Certified - Team On-Site Days', 'cert'],
       ['Certified - Training Days', 'cert']
     ],
-    // The whole Roster. This is the board that lists everybody, which is also
-    // why Add person lives on it.
-    includes: () => true,
+    /* Everyone EXCEPT the recruiting-only roles (Jordan, 2026-09-01: "recruiting
+       specialists should not show up on the dashboard at all for the
+       Training/TOSD Dashboard"). This board used to be the whole Roster; it is
+       now the people who do field training, which is what its six columns are
+       about — a Recruiting Specialist has no Day 1 meeting, no team on-site day
+       and no training-day certification to track, so a row of theirs here is
+       six badges that will never be ticked.
+
+       Stated as an EXCLUSION, like the Recruiting board's own rule, never as a
+       list of the roles that belong. An include-list silently drops a job title
+       nobody has invented yet, and a person you cannot see is a person whose
+       certifications cannot be recorded; excluding errs the other way, where a
+       wrong row is visible and one word to fix. Someone with a blank Role still
+       appears, for the same reason. */
+    includes: (person) => !isRecruitingOnlyRole(person['Role']),
     // Every session type — this board is the one place a person's whole history
     // is visible.
     sessionTypes: null,
@@ -4056,7 +4071,8 @@ const ROSTER_BOARDS = {
       ['Certified — Training Days', 'Certified - Training Days'],
       ['Certified — Team On-Site Days', 'Certified - Team On-Site Days']
     ],
-    peopleLabel: 'Managers'
+    peopleLabel: 'Managers',
+    scopeLabel: 'Counting everyone who does field training'
   },
   recruiting: {
     key: 'recruiting',
@@ -4078,7 +4094,8 @@ const ROSTER_BOARDS = {
     // doesn't exist would read "0 of 12 certified" when the truth is "nowhere to
     // record it yet", which the notice above the table already says properly.
     statCertColumns: () => recruitingColumnsPresent().map(c => [ROSTER_SHORT_LABELS[c] || c, c]),
-    peopleLabel: 'Managers who recruit'
+    peopleLabel: 'Managers who recruit',
+    scopeLabel: 'Counting everyone who recruits'
   }
 };
 
@@ -4986,9 +5003,10 @@ function renderDashboardStats(board) {
     const across = region ? '' : ` across ${regionsInScope} region${regionsInScope === 1 ? '' : 's'}`;
     const chips = [region, role].filter(Boolean)
       .map(c => `<span class="stat-scope-chip">${escapeHtml(c)}</span>`).join(' + ');
-    const whole = board.key === 'recruiting'
-      ? 'Counting everyone who recruits'
-      : 'Counting the whole roster';
+    // Off the board, not a ternary on its key: both boards now exclude some
+    // roles, so "the whole roster" was true of neither and this line is read
+    // directly under a figure it is supposed to explain.
+    const whole = board.scopeLabel;
     scopeEl.innerHTML = chips
       ? `Counting ${chips} — ${people}${across}. Searching a name doesn't change these figures.`
       : `${whole} — ${people}${across}.`;
@@ -5607,9 +5625,24 @@ function addedPersonConfirmation(name, role, region, covers, board) {
   const target = board || ROSTER_BOARDS.dashboard;
   let msg = `Added ${name} (${role}, ${region}${covers ? ', also covers ' + covers : ''}) to the Roster — ` +
     'every step starts at Pending. Click the badges on their row to tick things off.';
-  // A new person in BC3 added while the table is filtered to BC1 is a row that
-  // never appears, which reads as a failed save. Say why instead.
-  if (!rosterRowOnScreen(name, target)) msg += ' The filters you have set are hiding their row — clear them to see it.';
+  /* Each board now excludes some roles, so a row can be missing for two very
+     different reasons and the wrong explanation is worse than none. Board
+     membership is checked FIRST: telling somebody their filters are hiding a row
+     that no filter would ever show is how ten minutes gets spent clearing
+     filters. Reachable from either board — a role typed into "+ A role that
+     isn't listed…" is not checked against the board it was typed on. */
+  const person = { Role: role };
+  const elsewhere = Object.values(ROSTER_BOARDS).find(b => b.key !== target.key && b.includes(person));
+  if (!target.includes(person)) {
+    msg += elsewhere
+      ? ` ${role} isn’t listed on this board — find them on the ${elsewhere.label}.`
+      : ` ${role} isn’t listed on either dashboard, so they’re on the Roster sheet but not shown here. ` +
+        'Change their Role in the sheet if that isn’t what you wanted.';
+  } else if (!rosterRowOnScreen(name, target)) {
+    // A new person in BC3 added while the table is filtered to BC1 is a row that
+    // never appears, which reads as a failed save. Say why instead.
+    msg += ' The filters you have set are hiding their row — clear them to see it.';
+  }
   return msg;
 }
 
