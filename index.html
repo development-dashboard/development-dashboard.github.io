@@ -9563,7 +9563,15 @@ function feedbackData(sub, result) {
     strong: list(result && result.strong_areas),
     weak: list(result && result.weak_areas),
     focus: list(result && result.focus_areas),
-    corrections: normalizeCorrections(result && result.corrections),
+    /* The section name is put through sectionLabel() HERE, once, rather than in
+       each renderer — the same treatment the card gives it (correctionsBlock).
+       The model fills `section` with the raw KEY, so without this the email
+       prints `stage1_next_steps_reference_capture` at somebody. That is the
+       prefix leak this file already records shipping twice before, on its third
+       outing, and it reached a real inbox because the FIXTURE USED PRETTY
+       LABELS WHERE REAL DATA HAS KEYS — a test that could only pass. */
+    corrections: normalizeCorrections(result && result.corrections)
+      .map(c => Object.assign({}, c, { section: c.section ? sectionLabel(c.section) : '' })),
     reviewerNotes: String((result && result.notes_for_human_reviewer) || '')
       .split('|').map(s => s.trim().replace(/^[-–—]\s*/, '')).filter(Boolean)
   };
