@@ -1921,6 +1921,117 @@
     margin-bottom: 14px;
   }
   .ai-corrections .ai-callout-label { color: color-mix(in srgb, var(--brand-orange) 60%, var(--text-primary)); }
+
+  /* ---- Tone & energy (V23) — advisory, NEVER part of the grade ----
+     Jordan, 2026-09-09: "Bonus does not add any points just extra feedback ...
+     it is not meant for a grade but still give it a rating."
+
+     So this block has to read as feedback and never as a score, and the styling
+     is doing that job on purpose:
+       - DOTS, not a number over a denominator. A "4/5" sitting under a card
+         full of "8/10" section scores invites being read as one more graded
+         line; five dots cannot be mistaken for the /10 scale above it.
+       - It carries its own "Doesn't affect the score" chip, because the one
+         thing a reader must not conclude is that this moved the total.
+       - Its accent is the taupe brand neutral rather than a status tone. Green
+         or amber here would read as pass/fail on something that has no pass
+         mark at all.
+     Colours are --text-secondary, never --text-muted: this file records
+     --text-muted on --sunken at 4.09, which fails AA. */
+  .ai-tone {
+    background: var(--sunken);
+    border-radius: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--brand-taupe);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 14px;
+  }
+  .ai-tone-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .ai-tone .ai-callout-label { color: color-mix(in srgb, var(--brand-taupe) 62%, var(--text-primary)); }
+  .ai-tone-flag {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--brand-taupe) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-taupe) 34%, transparent);
+  }
+  .ai-tone-intro {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  /* Fixed label column so the dot rows line up vertically and the four can be
+     compared at a glance — the whole point of keeping them as four separate
+     numbers rather than one "delivery" score. */
+  .ai-tone-rows { display: grid; gap: 8px; }
+  .ai-tone-row {
+    display: grid;
+    grid-template-columns: 104px auto 1fr;
+    align-items: center;
+    gap: 10px;
+  }
+  .ai-tone-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .ai-tone-dots { display: inline-flex; gap: 4px; }
+  /* The EMPTY dot needs a visible ring or the scale can't be read — "4 on" and
+     "4 of 5" look identical if the unfilled two are invisible. Measured: the
+     dot fill (--gridline) is 1.12:1 against this panel in light mode, i.e.
+     effectively not there. Same failure this file already records for the
+     verdict-hero meter track, one component along.
+
+     The ring is --text-muted, NOT the brand taupe: taupe tops out at 2.46:1
+     here even at full strength (it is a light neutral on a light panel — the
+     same root cause as the --pending finding), while --text-muted measures
+     4.09 light / 6.52 dark against the 3:1 a UI component needs. Note 4.09 is
+     the value this file flags as failing for TEXT; a ring is not text, and 3:1
+     is the bar it has to clear. Don't "tidy" this back to a taupe mix. */
+  .ai-tone-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--text-muted);
+  }
+  .ai-tone-dot.is-on {
+    background: var(--accent);
+    box-shadow: none;
+  }
+  .ai-tone-value { font-size: 11.5px; color: var(--text-secondary); }
+  .ai-tone-value.is-unread { font-style: italic; }
+  .ai-tone-summary {
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-primary);
+  }
+  .ai-tone-clips { margin-top: 10px; }
+  .ai-tone-foot {
+    margin: 10px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  @media (max-width: 520px) {
+    /* The label column stops earning its width once the row has to wrap; a
+       104px column against a 60px name reads as a gap, not as alignment. */
+    .ai-tone-row { grid-template-columns: 1fr auto; }
+    .ai-tone-name { grid-column: 1 / -1; }
+  }
   .ai-corrections-intro {
     margin: 0 0 12px;
     font-size: 12px;
@@ -8820,6 +8931,101 @@ function correctionsBlock(result, interactive) {
      for the same arithmetic but is an audio-only blind spot. Same split the
      Follow-Ups tab makes, for the same reason — the two need different actions.
 */
+/* ---------------- Tone & energy (V23) ----------------
+   Advisory only. Jordan asked for it as "extra feedback ... not meant for a
+   grade but still give it a rating", and Code.gs returns it as a TOP-LEVEL
+   `tone_and_energy` field precisely so it can never reach total_score, the
+   every-section-6 rule, `certified`, Follow-Ups or Compare.
+
+   NOTHING IN HERE MAY EVER FEED A SCORE. This function renders and stops. If a
+   future change wants a tone number in a total, that is a different decision
+   and it is Jordan's to make.
+
+   The four dimensions are drawn even when only some could be read, because
+   "we could not tell" is itself the finding on a quiet or transcript-graded
+   session — blanking the row would look like the AI forgot to answer. */
+const TONE_DIMENSIONS = ['tone', 'energy', 'passion', 'enthusiasm'];
+const TONE_MAX = 5;
+
+// What each dot count means, mirroring the anchors in the Code.gs prompt so the
+// card cannot describe a 3 differently from the way the model was asked to
+// choose one.
+const TONE_WORDS = {
+  5: 'outstanding, sustained',
+  4: 'clearly strong',
+  3: 'solid, unremarkable',
+  2: 'noticeably weak in places',
+  1: 'poor throughout',
+  0: 'actively counterproductive'
+};
+
+function toneBlock(result, interactive) {
+  const tone = result && result.tone_and_energy;
+  // A row graded before V23 has no tone data at all. Render NOTHING rather than
+  // an empty panel headed "Tone & energy" — the same rule the manager-note
+  // block follows, and the reason it is not simply an "assessable: no" panel:
+  // nobody asked the model, so there is no answer to report.
+  if (!tone || typeof tone !== 'object' || Array.isArray(tone)) return '';
+
+  const counts = (tone.run_counts && typeof tone.run_counts === 'object') ? tone.run_counts : {};
+  let anyScored = false;
+
+  const rows = TONE_DIMENSIONS.map(dim => {
+    const raw = tone[dim];
+    const has = typeof raw === 'number' && isFinite(raw) && raw >= 0 && raw <= TONE_MAX;
+    const score = has ? Math.round(raw) : null;
+    if (has) anyScored = true;
+
+    const dots = [];
+    for (let i = 1; i <= TONE_MAX; i++) {
+      dots.push(`<span class="ai-tone-dot${has && i <= score ? ' is-on' : ''}"></span>`);
+    }
+
+    // How many passes could actually read this dimension. Shown as a tooltip
+    // rather than a visible fraction: a printed denominator would sometimes be
+    // a lie on a degraded grade, which is the same reason clipChips refuses to
+    // print one.
+    const n = Number(counts[dim]);
+    const readNote = (n > 0) ? ` · read by ${n} pass${n === 1 ? '' : 'es'}` : '';
+    const label = has
+      ? `${score} of ${TONE_MAX} — ${TONE_WORDS[score] || ''}`
+      : 'not enough to tell';
+    const tip = has
+      ? `${score} of ${TONE_MAX}: ${TONE_WORDS[score] || ''}${readNote}. Advisory only — this does not affect the score.`
+      : 'The recording did not give enough to judge this. It is not a low score, and it does not affect the grade.';
+
+    return `<div class="ai-tone-row" title="${escapeHtml(tip)}">
+      <span class="ai-tone-name">${escapeHtml(dim.charAt(0).toUpperCase() + dim.slice(1))}</span>
+      <span class="ai-tone-dots" role="img" aria-label="${escapeHtml(label)}">${dots.join('')}</span>
+      <span class="ai-tone-value${has ? '' : ' is-unread'}">${escapeHtml(label)}</span>
+    </div>`;
+  }).join('');
+
+  const summary = String(tone.summary || '').trim();
+  const clips = Array.isArray(tone.evidence_clips) ? tone.evidence_clips : [];
+
+  /* The intro changes with how much could be read, and the "no" case is the one
+     that matters most: on a transcript-graded session the AI genuinely cannot
+     hear the recording, and a reader must not take four empty rows as "they
+     were flat". Code.gs is explicit that an absent delivery note is MISSING
+     EVIDENCE, never a low score, so the card says the same thing. */
+  const intro = anyScored
+    ? 'How the session came across — tone, energy, passion and enthusiasm. This is extra feedback for coaching, on its own 0–5 scale. It is not a section, it is not added to the total, and it cannot change the verdict above.'
+    : 'There was not enough in this recording to judge delivery. That is a gap in the evidence, not a low score — nothing here counts against the grade.';
+
+  return `<div class="ai-tone">
+    <div class="ai-tone-head">
+      <span class="ai-callout-label">Tone &amp; energy</span>
+      <span class="ai-tone-flag">Doesn't affect the score</span>
+    </div>
+    <p class="ai-tone-intro">${escapeHtml(intro)}</p>
+    <div class="ai-tone-rows">${rows}</div>
+    ${summary ? `<p class="ai-tone-summary">${escapeHtml(summary)}</p>` : ''}
+    ${clips.length ? `<div class="ai-tone-clips">${clipChips(clips, interactive)}</div>` : ''}
+    <p class="ai-tone-foot">Delivery is the most subjective thing the AI reads here, and none of it is calibrated yet. Treat it as a prompt for a conversation, not a measurement.</p>
+  </div>`;
+}
+
 function verdictHero(result, maxPossible) {
   const rawTotal = Number(result.total_score);
   const total = (result.total_score !== undefined && result.total_score !== null && !Number.isNaN(rawTotal))
@@ -9080,6 +9286,7 @@ function renderAiGradingResult(result, container, audioFileId, transcriptLink) {
       ${calloutBlock('Focus areas', 'focus', result.focus_areas)}
     </div>
     ${correctionsBlock(result, !!audioFileId)}
+    ${toneBlock(result, !!audioFileId)}
     ${result.day1_carryover_notes ? `<p class="ai-note"><strong>Day 1 carryover notes:</strong> ${escapeHtml(result.day1_carryover_notes)}</p>` : ''}
     ${reviewerNotesBlock}
   `;
@@ -9270,6 +9477,7 @@ function parseAiResultFromRow(r) {
     weak_areas: splitList(r[13]),
     focus_areas: splitList(r[14]),
     corrections: correctionsFromRuns(runs),
+    tone_and_energy: toneFromRuns(runs),
     day1_carryover_notes: r[15] || '',
     notes_for_human_reviewer: r[16] || ''
   };
@@ -9286,6 +9494,64 @@ function parseAiResultFromRow(r) {
 // graded or re-opened from the log. Walking backwards rather than indexing the
 // end handles the case where the last run's JSON didn't parse — it never made
 // it into `runs`, so the newest one that did is the closest equivalent.
+/* The tone read has no sheet column either, for the same reason corrections
+   don't: Code.gs still stops at S, and T through Z are already taken by the
+   follow-up state, the sections tick, the transcript link, the Compare human
+   scores and Feedback Sent. So it rides along in column S's raw JSON and gets
+   rebuilt here.
+
+   THIS MUST MATCH reconcileToneAndEnergy IN Code.gs. It is one more entry on
+   the duplicated-logic pile this file already warns about (mergeClips,
+   firstJsonObject, parseClipSeconds, SCORE_SPREAD_FLAG_THRESHOLD) — change one
+   side and a session's tone read will differ depending on whether you are
+   looking at a fresh grade or the same session re-opened from the log. That
+   exact drift has bitten this project once already, on the section scores.
+
+   Median of the passes that gave a usable number, rounded, exactly as
+   reconcileSection rounds; `assessable` DERIVED rather than copied off a run,
+   so a pass claiming "yes" over four nulls is not believed; summary from the
+   LAST run that had one, matching how corrections and the callouts are taken. */
+function toneFromRuns(runs) {
+  const blocks = runs
+    .map(r => r && r.tone_and_energy)
+    // typeof null is 'object', and an array would pass a bare typeof check too.
+    .filter(b => b && typeof b === 'object' && !Array.isArray(b));
+
+  const out = {
+    assessable: 'no',
+    tone: null, energy: null, passion: null, enthusiasm: null,
+    summary: '',
+    evidence_clips: [],
+    run_counts: {}
+  };
+  if (!blocks.length) return null;   // null, not an empty block: see toneBlock()
+
+  let scored = 0;
+  TONE_DIMENSIONS.forEach(dim => {
+    const values = blocks
+      .map(b => b[dim])
+      // Numbers only and in range: a stringified "4", or a 7 on a 0–5 scale, is
+      // not a usable answer for this dimension.
+      .filter(v => typeof v === 'number' && isFinite(v) && v >= 0 && v <= TONE_MAX);
+    out.run_counts[dim] = values.length;
+    if (values.length) {
+      const sorted = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const med = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      out[dim] = Math.round(med);
+      scored++;
+    }
+  });
+  out.assessable = scored === TONE_DIMENSIONS.length ? 'yes' : (scored > 0 ? 'partial' : 'no');
+
+  const withSummary = blocks.filter(b => b.summary && String(b.summary).trim());
+  out.summary = withSummary.length ? String(withSummary[withSummary.length - 1].summary).trim() : '';
+  // Same merge the sections use, so a tone clip and a section clip behave
+  // identically and the jump points don't move between the two views.
+  out.evidence_clips = mergeClips(blocks);
+  return out;
+}
+
 function correctionsFromRuns(runs) {
   for (let i = runs.length - 1; i >= 0; i--) {
     if (Array.isArray(runs[i].corrections) && runs[i].corrections.length) return runs[i].corrections;
