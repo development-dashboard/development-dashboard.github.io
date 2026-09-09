@@ -717,6 +717,54 @@
     white-space: nowrap;
     letter-spacing: 0.01em;
   }
+  /* The address under a person's name, and the box it becomes when clicked.
+     Sized and coloured like .region-also directly above — same reason for
+     --text-secondary over --text-muted, which measures ~3.2:1 at this size.
+
+     Ellipsised rather than wrapped: a work address is ~33 characters in a
+     column of about 158px, and letting it wrap would add a line to every row
+     on the table. The full value is on the title and the aria-label. */
+  .roster-email {
+    display: block;
+    max-width: 100%;
+    margin-top: 3px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .roster-email:hover, .roster-email:focus-visible { color: var(--accent); text-decoration: underline; }
+  /* Italic carries "nothing here yet"; the colour does NOT. --text-muted was
+     tried and measured 4.55 resting and 3.94 on a HOVERED row — under AA, and
+     the hovered state is the normal one, since the row this sits in is a
+     click-to-expand row somebody's pointer is over on the way to clicking it.
+     Same --text-secondary as the filled state, which is 7.47 / 6.4 hovered. */
+  .roster-email.is-empty { font-style: italic; }
+  .roster-email.is-empty:hover, .roster-email.is-empty:focus-visible { color: var(--accent); }
+  .roster-email-input {
+    display: block;
+    width: 100%;
+    margin-top: 3px;
+    padding: 2px 5px;
+    font: inherit;
+    font-size: 10.5px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+  }
+  .roster-email-input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .roster-email-input.is-bad { border-color: var(--critical); background: color-mix(in srgb, var(--critical) 8%, var(--surface-1)); }
+
   .add-person-new { margin-top: 8px; }
   .add-person-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   /* Same reasoning as .alert-bar-title: full-strength --critical on a tinted or
@@ -2267,6 +2315,107 @@
     background: transparent;
     padding: 16px 18px;
   }
+
+  /* ---- Sending a graded session to the person it's about ----
+     Sits at the top of an expanded session, above the manager's note and the
+     AI card. Deliberately quieter than an .alert-bar: this is an action that's
+     available, not a problem demanding attention, and the loud shell in this
+     file is reserved for things that have gone wrong or need a decision. */
+  .fb-sender {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--sunken);
+    padding: 13px 15px;
+    margin: 0 0 14px;
+  }
+  .person-session .fb-sender, .log-detail-row .fb-sender { margin: 14px 18px; }
+  .fb-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .fb-title { font-size: 13.5px; font-weight: 700; color: var(--text-primary); }
+  .fb-sent {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    /* Same pull toward the page's text colour as .edit-status and the badges:
+       full-strength --good measures 4.45:1 here and is a hair under AA. */
+    color: color-mix(in srgb, var(--good) 82%, var(--text-primary));
+  }
+  .fb-sent svg { width: 13px; height: 13px; flex: none; }
+  .fb-blocked, .fb-to {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .fb-blocked { margin-top: 6px; line-height: 1.5; }
+  .fb-actions { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-top: 9px; }
+  .fb-compose { margin-top: 14px; }
+  .fb-compose.hidden { display: none; }
+  .fb-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin: 12px 0 4px;
+  }
+  .fb-label:first-child { margin-top: 0; }
+  .fb-fixed { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+  .fb-cc { font-weight: 500; color: var(--text-secondary); }
+  .fb-subject, .fb-body {
+    width: 100%;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+  }
+  /* The body is a plain-text email and is edited as one — a proportional font
+     would hide that the section lines are meant to line up. */
+  .fb-body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    resize: vertical;
+    min-height: 220px;
+  }
+  .fb-subject:focus, .fb-body:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fb-send-row { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-top: 12px; }
+  .fb-status { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .fb-status.is-ok { color: color-mix(in srgb, var(--good) 82%, var(--text-primary)); }
+  /* Measured at this size full-strength --critical is around 4.0:1 on a sunken
+     panel, under AA — the same finding as .notice-err, and the same fix. */
+  .fb-status.is-err { color: color-mix(in srgb, var(--critical) 78%, var(--text-primary)); }
+
+  /* The compose panel collapses on a successful send, so the confirmation
+     needs somewhere to live that isn't inside the thing that just closed. */
+  .fb-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translate(-50%, 14px);
+    z-index: 60;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 12px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-pop);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .fb-toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Everything above is decoration on a message that is already in the DOM and
+     already readable; a browser that doesn't animate still shows it. */
+  @media (prefers-reduced-motion: reduce) {
+    .fb-toast { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -2397,6 +2546,15 @@
               <div class="add-person-hint">Other regions this person is the direct report for. Separate them with commas.
                 Leave blank for anyone who only looks after their own region.</div>
             </div>
+            <!-- Hidden unless the Roster actually has an Email column, exactly
+                 like Also Covers above and for the same reason: a field with
+                 nowhere to write to is a field that can only fail. -->
+            <div class="field hidden" id="ap-email-field">
+              <label for="ap-email">Email <span class="field-optional">— optional</span></label>
+              <input id="ap-email" type="email" placeholder="e.g. name@decorepair.com">
+              <div class="add-person-hint">Where their graded sessions get sent when a manager sends the feedback on.
+                Can be filled in later by clicking under their name on the table.</div>
+            </div>
           </div>
           <div class="add-person-actions">
             <button type="submit" id="ap-submit" class="btn">Add to Roster</button>
@@ -2412,6 +2570,7 @@
              line that clears itself. -->
         <!-- Passing manual grades sitting in the Grading Log that the Roster
              never caught up with — see renderCertCatchupNotice. -->
+        <div id="dashboard-email-notice"></div>
         <div id="dashboard-cert-catchup"></div>
         <div id="dashboard-edit-error"></div>
         <div id="dashboard-edit-status" class="edit-status" aria-live="polite"></div>
@@ -2478,6 +2637,7 @@
              "Not yet" that can't be clicked, so the bar says exactly which
              headers are missing and offers to add them. -->
         <div id="recruiting-columns-notice"></div>
+        <div id="recruiting-email-notice"></div>
         <div id="recruiting-cert-catchup"></div>
         <div id="recruiting-edit-error"></div>
         <div id="recruiting-edit-status" class="edit-status" aria-live="polite"></div>
@@ -2671,7 +2831,21 @@ const CLIENT_ID = '550922912918-644ak2spqikcj5n56n9ih8jhfs19acqu.apps.googleuser
 const ROSTER_SHEET_ID  = '1LAqMWl_sSv0NSvzh2Z4YefgxpAr2RZtjvepYvful66s';
 const GRADING_SHEET_ID = '1TsfoRDTZa73ruDGC1uDaSJJ7WKr4STQRTNNbz7S2H2M';
 const AUDIO_FOLDER_ID  = '1Gj4Z8GeNzThuHXTUY0chEEvQixg2Zr8z';
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+/* gmail.send is what lets a manager send a graded session's feedback to the
+   person it is about, FROM THEIR OWN ADDRESS — see sendFeedbackEmail(). It is
+   asked for here rather than at the moment of sending so the consent happens
+   once, at sign-in, instead of interrupting somebody mid-compose.
+
+   Adding a scope means everyone already signed in gets one fresh consent
+   screen. That was a real cost and was weighed: the alternative considered and
+   rejected was routing the send through Apps Script, which would have sent
+   every manager's feedback from the script owner's account — i.e. all feedback
+   in the company appearing to come from Jordan.
+
+   gmail.send is send-only. It cannot read, search or delete anything in a
+   mailbox; there is no scope here that can open somebody's mail. */
+const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file ' + GMAIL_SEND_SCOPE;
 // AI grading: the Web App URL from deploying Code.gs in Apps Script (Deploy > New deployment > Web app).
 const AI_GRADING_ENDPOINT = 'https://script.google.com/a/macros/decorepair.com/s/AKfycbyWTE5fjMMSr2pExK0EuyuExZhXT0Por7k2Hh6vXeSrXRbAlDT7qrOsErKz6W_SnY3I/exec';
 /* ============================================================================ */
@@ -2874,6 +3048,38 @@ const ROSTER_COLS = [
 // key on a roster object is a literal header from row 1.
 const ROSTER_ROW_NUMBER = '__rowNumber';
 
+/* ---------------- Where feedback gets sent ----------------
+   The Roster's own address book. One column, shared by both boards, because a
+   person has one work email whichever board they appear on.
+
+   Deliberately NOT a column of its own in the roster TABLE. Both boards are
+   table-layout:fixed and already split their width between four fixed columns
+   and five or six status badges; a work address is ~33 characters, so a real
+   column would squeeze the badges rather than scroll, which is the exact
+   failure mode this file has hit before. It renders as a second line under the
+   name instead — the same shape as the "also BC1, BC5" line under Region —
+   ellipsised, with the full address on the tooltip, and it turns into an input
+   when clicked.
+
+   Optional, always. Every roster read, filter, stat and certification works
+   with it blank; the only thing a missing address stops is sending that person
+   their feedback, and the send panel says so in as many words rather than the
+   button quietly not being there. */
+const ROSTER_EMAIL_COLUMN = 'Email';
+
+function rosterEmailOf(person) {
+  return ((person && person[ROSTER_EMAIL_COLUMN]) || '').toString().trim();
+}
+
+/* Good enough to catch a typo, deliberately not RFC 5322. The cost of being too
+   strict here is refusing somebody's real address, which is worse than letting
+   a wrong one through — the manager reads the To: line on the compose panel
+   before anything sends. Rejects the mistakes that actually happen: no @, no
+   dot after it, spaces, or a stray comma from pasting two addresses at once. */
+function looksLikeEmail(value) {
+  return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test((value || '').trim());
+}
+
 /* ---------------------- Auth persistence ----------------------
    Google's token client only ever hands back a short-lived (~1hr) access
    token, kept in a plain JS variable — so a page refresh used to wipe it
@@ -2925,6 +3131,9 @@ const WATCHDOG_INTERVAL_MS = 30 * 1000;
 // matters when something has gone wrong. 6s was short enough that a slow
 // network or a browser still waking up counted as a hard failure.
 const SILENT_TIMEOUT_MS = 12000;
+// A consent screen somebody has to read and click through, not a background
+// request — see requestGmailPermission().
+const GMAIL_CONSENT_TIMEOUT_MS = 120000;
 // How long to leave a renewal alone once it looks like Google has put something
 // on screen. Long enough that a manager who is reading it, or who wandered off
 // mid-sentence, isn't handed a second one — and still comfortably inside the
@@ -2945,13 +3154,30 @@ let nextRenewAllowedAt = 0;
 // the across-refresh convenience, not the session itself.
 let tokenMemoryFallback = null;
 
-function saveToken(token, expiresInSeconds) {
+/* Which scopes this token was actually GRANTED, space-separated, straight off
+   Google's reply. Not the same thing as SCOPES: Google's consent screen lets
+   somebody untick an individual permission and approve the rest, so asking for
+   gmail.send is no evidence at all of having it. Stored with the token (and so
+   restored on a refresh) because the Send button has to know before it offers
+   itself, not after a 403. Empty means "not known yet" — see hasGmailScope(). */
+let grantedScopes = '';
+
+function saveToken(token, expiresInSeconds, scope) {
   const expiresAt = Date.now() + (expiresInSeconds * 1000) - 60000; // 60s safety buffer
-  const record = { access_token: token, expires_at: expiresAt };
+  // A renewal that doesn't echo the scopes back keeps whatever was last known,
+  // rather than silently downgrading a session to "no Gmail permission".
+  if (scope) grantedScopes = scope;
+  const record = { access_token: token, expires_at: expiresAt, scope: grantedScopes };
   tokenMemoryFallback = record;
   try {
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(record));
   } catch (e) { /* keeps working from memory for the life of this tab */ }
+}
+
+// Can this session send mail as the signed-in manager? Read off the granted
+// scopes rather than assumed from SCOPES, for the reason above.
+function hasGmailScope() {
+  return (' ' + grantedScopes + ' ').includes(' ' + GMAIL_SEND_SCOPE + ' ');
 }
 function loadStoredToken() {
   let parsed = null;
@@ -2961,10 +3187,14 @@ function loadStoredToken() {
   } catch (e) { parsed = null; }
   if (!parsed) parsed = tokenMemoryFallback;
   if (!parsed || !parsed.access_token || !parsed.expires_at || parsed.expires_at <= Date.now()) return null;
+  // Restored alongside the token so a page refresh knows whether the Send
+  // button can be offered without waiting for the next renewal to say so.
+  if (parsed.scope) grantedScopes = parsed.scope;
   return parsed;
 }
 function clearStoredToken() {
   tokenMemoryFallback = null;
+  grantedScopes = '';
   try { localStorage.removeItem(TOKEN_STORAGE_KEY); } catch (e) { /* nothing stored to clear */ }
 }
 
@@ -3098,6 +3328,42 @@ function requestSilentToken() {
   return promise;
 }
 
+/* Ask Google, on screen, for the permission to send mail as this manager.
+   Deliberately unlike requestSilentToken in three ways, all for the same
+   reason — this one is EXPECTED to put something on screen:
+
+   - prompt:'consent' rather than ''. Somebody who unticked the Gmail box on a
+     previous consent screen has a valid token that simply lacks the scope, and
+     prompt:'' would hand that same token straight back without ever asking
+     again. Only an explicit consent can change their mind.
+   - It waits far longer than SILENT_TIMEOUT_MS, because a person now has to
+     read the screen and click. Timing out at 12 seconds would report a failure
+     while the consent dialog was still open in front of them.
+   - It does NOT set silentRenewMayBeOnScreen on timing out. That flag exists to
+     hold back renewals that might be stacking popups nobody asked for; this
+     popup was asked for, by a click.
+
+   login_hint is still sent, so it consents as the account already in use rather
+   than opening an account chooser. */
+function requestGmailPermission() {
+  if (!tokenClient) return Promise.resolve(false);
+  const stamp = ++silentRenewSeq;
+  silentRenewStartedAt = Date.now();
+  silentRenewInFlight = null;
+  pendingSilentResolve = null;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+    pendingSilentResolve = () => finish(hasGmailScope());
+    try {
+      const opts = { prompt: 'consent' };
+      if (rememberedAccount) opts.login_hint = rememberedAccount;
+      tokenClient.requestAccessToken(opts);
+    } catch (e) { settleSilentRenew(null, stamp); finish(false); return; }
+    setTimeout(() => { settleSilentRenew(null, stamp); finish(hasGmailScope()); }, GMAIL_CONSENT_TIMEOUT_MS);
+  });
+}
+
 // The single place a renewal happens in the background, and — this is the part
 // that was missing — the single place that re-arms the next attempt. Before
 // this, a failed renewal was the quiet end of the session: nothing rescheduled,
@@ -3213,7 +3479,7 @@ function onGsiLoad() {
         return;
       }
       accessToken = resp.access_token;
-      saveToken(accessToken, resp.expires_in);
+      saveToken(accessToken, resp.expires_in, resp.scope);
       scheduleTokenRefresh(resp.expires_in);
       // Deliberately not awaited: every renewal from here on is smoother for
       // knowing the account, but nothing about this one depends on it.
@@ -4030,7 +4296,7 @@ const ROSTER_BOARDS = {
       section: 'tab-dashboard', wrap: 'dashboard-table-wrap',
       stats: 'dashboard-stats', scope: 'dashboard-stats-scope',
       region: 'filter-region', role: 'filter-role', search: 'filter-search',
-      certCatchup: 'dashboard-cert-catchup',
+      certCatchup: 'dashboard-cert-catchup', emailNotice: 'dashboard-email-notice',
       editError: 'dashboard-edit-error', editStatus: 'dashboard-edit-status',
       addBtn: 'add-person-btn', addHost: 'dashboard-add-person-host'
     },
@@ -4081,7 +4347,7 @@ const ROSTER_BOARDS = {
       section: 'tab-recruiting', wrap: 'recruiting-table-wrap',
       stats: 'recruiting-stats', scope: 'recruiting-stats-scope',
       region: 'rc-filter-region', role: 'rc-filter-role', search: 'rc-filter-search',
-      certCatchup: 'recruiting-cert-catchup',
+      certCatchup: 'recruiting-cert-catchup', emailNotice: 'recruiting-email-notice',
       editError: 'recruiting-edit-error', editStatus: 'recruiting-edit-status',
       addBtn: 'rc-add-person-btn', addHost: 'recruiting-add-person-host'
     },
@@ -4170,6 +4436,36 @@ function renderRecruitingColumnsNotice() {
   if (btn) btn.addEventListener('click', () => addRecruitingColumnsToRoster(btn));
 }
 
+/* Append headers to the right of what the Roster already has, and read them
+   back. Shared by the recruiting certification columns and the Email column —
+   two callers, one place that knows how to widen the sheet safely.
+
+   APPENDS, never inserts, so nothing already in the sheet moves. Throws rather
+   than reporting, so each caller can word its own failure. */
+async function appendRosterColumns(missing) {
+  // The last header actually in use — not rosterHeaders.length, which can carry
+  // trailing blanks and would leave an empty column in the middle.
+  let start = 0;
+  rosterHeaders.forEach((h, i) => { if (h) start = i + 1; });
+  const end = start + missing.length - 1;
+  // The roster is read as A1:Z1000, so a column past Z would be written and then
+  // never seen again. Refuse rather than write somewhere invisible.
+  if (end > 25) {
+    throw new Error('there is no room left on the Roster before column Z, which is as far as this app reads. Add the columns in the sheet by hand.');
+  }
+  if (!(await ensureFreshToken())) throw new Error('your Google sign-in has expired. Sign in again and retry.');
+  const range = `${columnLetter(start)}1:${columnLetter(end)}1`;
+  await sheetsBatchUpdate(ROSTER_SHEET_ID, [{ range, values: [missing] }]);
+  const check = await sheetsGet(ROSTER_SHEET_ID, range);
+  const written = (check[0] || []).map(v => (v || '').trim());
+  if (!missing.every((c, i) => written[i] === c)) {
+    // Deliberately does NOT claim nothing was written — something may well have
+    // landed, and a confident "nothing happened" is how a column gets added twice.
+    throw new Error(`the headers didn't read back as expected. Check row 1 of the Roster sheet from column ${columnLetter(start)} before trying again.`);
+  }
+  await loadRoster();
+}
+
 // Append the missing headers, read them back, then reload the roster. Read back
 // for the same reason writeRosterCell does: a write that quietly doesn't stick
 // would leave the board looking fixed and still writing nowhere.
@@ -4181,35 +4477,12 @@ async function addRecruitingColumnsToRoster(btn) {
   const fail = (msg) => { if (errEl) errEl.textContent = msg; };
   fail('');
 
-  // The last header actually in use — not rosterHeaders.length, which can carry
-  // trailing blanks and would leave an empty column in the middle.
-  let start = 0;
-  rosterHeaders.forEach((h, i) => { if (h) start = i + 1; });
-  const end = start + missing.length - 1;
-  // The roster is read as A1:Z1000, so a column past Z would be written and then
-  // never seen again. Refuse rather than write somewhere invisible.
-  if (end > 25) {
-    fail('There is no room left on the Roster before column Z, which is as far as this app reads. Add the columns in the sheet by hand.');
-    return;
-  }
-
   recruitingColumnsBusy = true;
   btn.disabled = true;
   const label = btn.textContent;
   btn.textContent = 'Adding…';
   try {
-    if (!(await ensureFreshToken())) throw new Error('your Google sign-in has expired. Sign in again and retry.');
-    const range = `${columnLetter(start)}1:${columnLetter(end)}1`;
-    await sheetsBatchUpdate(ROSTER_SHEET_ID, [{ range, values: [missing] }]);
-    const check = await sheetsGet(ROSTER_SHEET_ID, range);
-    const written = (check[0] || []).map(v => (v || '').trim());
-    const stuck = missing.every((c, i) => written[i] === c);
-    if (!stuck) {
-      // Deliberately does NOT claim nothing was written — something may well have
-      // landed, and a confident "nothing happened" is how a column gets added twice.
-      throw new Error(`the headers didn't read back as expected. Check row 1 of the Roster sheet from column ${columnLetter(start)} before trying again.`);
-    }
-    await loadRoster();
+    await appendRosterColumns(missing);
     showRosterEditStatus(`Added ${missing.length} column${missing.length === 1 ? '' : 's'} to the Roster. Click a badge to certify someone.`, ROSTER_BOARDS.recruiting);
   } catch (e) {
     fail(`Couldn't add the columns — ${e.message}`);
@@ -4217,6 +4490,65 @@ async function addRecruitingColumnsToRoster(btn) {
     btn.textContent = label;
   } finally {
     recruitingColumnsBusy = false;
+  }
+}
+
+/* ---- The Email column ----
+   Offered on BOTH boards, unlike the recruiting columns, because a person's
+   address is wanted wherever they appear. Drawn with the table so adding the
+   column takes the notice away.
+
+   Same shape as the recruiting offer and for the same reasons: the app appends
+   the header rather than making somebody guess where it goes in the sheet, and
+   a read-back that disagrees refuses to claim nothing was written. */
+let emailColumnBusy = false;
+
+function renderRosterEmailNotice(board) {
+  const host = boardEl(board, 'emailNotice');
+  if (!host) return;
+  if (!rosterHeaders.length || rosterHeaders.includes(ROSTER_EMAIL_COLUMN)) { host.innerHTML = ''; return; }
+  host.innerHTML =
+    `<div class="alert-bar">` +
+      `<div class="alert-bar-icon">${alertIcon()}</div>` +
+      `<div class="alert-bar-body">` +
+        `<div class="alert-bar-title">The Roster hasn't got an Email column yet</div>` +
+        `<div>Without one there is nowhere to keep people's addresses, so a graded session can't be ` +
+          `sent on to the person it's about. Adding it puts an <strong>Email</strong> header on the Roster ` +
+          `sheet to the right of what's already there — nothing else in the sheet moves, and every address ` +
+          `starts blank. You then fill them in by clicking under someone's name on this table.</div>` +
+        // Short for the recorded reason: .alert-bar .btn is white-space:nowrap,
+        // and a long label has pushed this page into horizontal scroll at 375px
+        // before. The long form is on the aria-label.
+        `<div class="notice-actions">` +
+          `<button type="button" class="btn" id="add-email-col-btn-${escapeHtml(board.key)}"` +
+            ` aria-label="Add an Email column to the Roster sheet">Add it to the Roster</button>` +
+        `</div>` +
+        `<div class="alert-bar-text notice-err" id="email-column-error-${escapeHtml(board.key)}"></div>` +
+      `</div>` +
+    `</div>`;
+  const btn = document.getElementById(`add-email-col-btn-${board.key}`);
+  if (btn) btn.addEventListener('click', () => addEmailColumnToRoster(btn, board));
+}
+
+async function addEmailColumnToRoster(btn, board) {
+  if (emailColumnBusy) return;
+  if (rosterHeaders.includes(ROSTER_EMAIL_COLUMN)) return;
+  const errEl = document.getElementById(`email-column-error-${board.key}`);
+  const fail = (msg) => { if (errEl) errEl.textContent = msg; };
+  fail('');
+  emailColumnBusy = true;
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Adding…';
+  try {
+    await appendRosterColumns([ROSTER_EMAIL_COLUMN]);
+    showRosterEditStatus('Added the Email column. Click under someone\'s name to fill in their address.', board);
+  } catch (e) {
+    fail(`Couldn't add the column — ${e.message}`);
+    btn.disabled = false;
+    btn.textContent = label;
+  } finally {
+    emailColumnBusy = false;
   }
 }
 
@@ -4461,6 +4793,7 @@ function renderDashboardTable(board) {
   // The notice about missing Roster columns is drawn with the table it's about,
   // so a Refresh that adds the columns takes it away.
   renderRecruitingColumnsNotice();
+  renderRosterEmailNotice(board);
   // Same reasoning: drawn with the table, so certifying somebody takes their row
   // off the list. Deliberately computed over the whole board rather than the
   // filtered rows below — a filter must not hide a sign-off that's waiting.
@@ -4499,7 +4832,7 @@ function renderDashboardTable(board) {
     // the row that was open (see renderDashboardKeepingOpenRow).
     html += `<tr class="roster-row" data-row-index="${i}" data-person="${escapeHtml(r['Name'] || '')}" title="Click to see this person's sessions">`;
     html += `<td class="roster-chevron-cell"><span class="log-chevron">&#9656;</span></td>`;
-    html += `<td class="name-cell">${escapeHtml(r['Name'])}${countBadge}</td>`;
+    html += `<td class="name-cell">${escapeHtml(r['Name'])}${countBadge}${rosterEmailCell(r)}</td>`;
     html += `<td>${escapeHtml(r['Role'])}</td>`;
     // The regions they cover are drawn, not just filtered on — a row that comes
     // back in the BC1 view with "BC3" in this column otherwise reads as a bug.
@@ -4520,6 +4853,7 @@ function renderDashboardTable(board) {
   html += '</tbody></table>';
   wrap.innerHTML = html;
   wireRosterToggles(wrap);
+  wireRosterEmailCells(wrap);
 
   // Click a person to see the recordings they've submitted, one open at a time.
   // Rendered on first open rather than up front — a full roster's worth of
@@ -4601,9 +4935,10 @@ async function renderPersonSessions(name, container, board) {
 
   sessions.forEach((s, i) => {
     const hasAi = !!parsedAi[i];
-    // Same rule as Recent Submissions: a manual-only grade with a note opens too.
+    // Same rule as Recent Submissions: a manual-only grade with a note opens too,
+    // and so does anything that can be emailed to the person it's about.
     const noteHtml = managerNoteBlock(s);
-    const canExpand = hasAi || !!noteHtml;
+    const canExpand = hasAi || !!noteHtml || feedbackWorthSending(s, parsedAi[i]);
     const when = s.when ? new Date(s.when).toLocaleDateString() : '';
     const manual = s.manualGrade
       ? escapeHtml(s.manualGrade)
@@ -4636,7 +4971,7 @@ async function renderPersonSessions(name, container, board) {
         // The board key is in the id because the same person can be expanded on
         // both boards at once, and two elements sharing an id is one card
         // rendering into the other board's row.
-        ? `<div class="ps-detail hidden">` + noteHtml +
+        ? `<div class="ps-detail hidden"><div class="fb-host"></div>` + noteHtml +
             `<div class="ai-result-box" id="ps-detail-${escapeHtml(cssSafeKey(board ? board.key : 'x'))}-${escapeHtml(String(i))}-${escapeHtml(cssSafeKey(name))}"></div>` +
           `</div>`
         : '') +
@@ -4663,9 +4998,14 @@ async function renderPersonSessions(name, container, board) {
       if (!isOpen) {
         card.classList.add('open');
         detail.classList.remove('hidden');
-        if (!rendered && result && box) {
+        if (!rendered) {
           rendered = true;
-          renderAiGradingResult(result, box, driveFileIdFromLink(audioLinkOf(s.audioLink)), s.transcriptLink);
+          // Drawn on every open, whether or not there's an AI card underneath —
+          // a manual grade with no AI read is still feedback worth sending.
+          if (feedbackWorthSending(s, result)) renderFeedbackSender(s, result, detail.querySelector('.fb-host'));
+          if (result && box) {
+            renderAiGradingResult(result, box, driveFileIdFromLink(audioLinkOf(s.audioLink)), s.transcriptLink);
+          }
         }
       }
     });
@@ -5130,9 +5470,12 @@ function certProgressLabel(person, column, value) {
 let rosterEditBusy = false;
 let armedRosterToggle = null;
 let rosterEditStatusTimer = null;
+// An address is open for editing. Same reason as the two above: a background
+// refresh repainting the table would take the box away mid-word.
+let rosterEmailEditing = false;
 function rosterEditInProgress() {
   return rosterEditBusy || addPersonBusy || recruitingColumnsBusy || certCatchupBusy ||
-    !!armedRosterToggle || !!armedCertCatchup;
+    rosterEmailEditing || emailColumnBusy || !!armedRosterToggle || !!armedCertCatchup;
 }
 
 function isYesValue(val) { return (val || '').toString().trim().toLowerCase() === 'yes'; }
@@ -5179,6 +5522,122 @@ function rosterToggleCell(person, column, kind, board) {
   return `<button type="button" class="badge-toggle" data-person="${escapeHtml(name)}"` +
     ` data-column="${escapeHtml(column)}" data-kind="${kind}" data-board="${escapeHtml(board.key)}"` +
     ` title="${label}" aria-label="${label}">${badge}</button>`;
+}
+
+/* The address line under a person's name, and the control that sets it.
+
+   Nothing at all when the Roster has no Email column — same rule
+   rosterToggleCell follows for a missing certification column: a control whose
+   write could only fail is worse than no control, and renderRosterEmailNotice()
+   above the table explains that case properly. */
+function rosterEmailCell(person) {
+  if (!rosterHeaders.includes(ROSTER_EMAIL_COLUMN)) return '';
+  const name = person['Name'] || '';
+  const email = rosterEmailOf(person);
+  const label = email
+    ? `${email} — click to change. Feedback for ${name || 'this person'} is sent here.`
+    : `Add an email address for ${name || 'this person'}, so their graded sessions can be sent to them.`;
+  return `<button type="button" class="roster-email${email ? '' : ' is-empty'}"` +
+    ` data-person="${escapeHtml(name)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
+    `${escapeHtml(email || '+ Add email')}</button>`;
+}
+
+/* Swap the address line for a text box, and write it back on Enter or on
+   leaving the field. Escape abandons the edit.
+
+   The write goes through writeRosterCell, so it lands on the row number stamped
+   during loadRoster and is READ BACK before anything on screen changes — the
+   same guard every other Roster write in this app uses, and it matters as much
+   here: a silently-dropped write would leave the app showing an address that
+   feedback is then sent to and never arrives at.
+
+   Deliberately does NOT re-render the table. A repaint would shut whatever row
+   somebody has open and throw away an armed certification, so only this one
+   cell is redrawn — the same rule wireRosterToggles follows. */
+function wireRosterEmailCells(wrap) {
+  wrap.querySelectorAll('.roster-email').forEach(btn => {
+    btn.addEventListener('click', (event) => {
+      // The row underneath expands this person's sessions; a click meant for
+      // the address must not also open it.
+      event.stopPropagation();
+      if (rosterEmailEditing) return;
+      const name = btn.getAttribute('data-person');
+      const person = rosterPerson(name);
+      if (!person) return;
+      const before = rosterEmailOf(person);
+
+      const input = document.createElement('input');
+      input.type = 'email';
+      input.className = 'roster-email-input';
+      input.value = before;
+      input.placeholder = 'name@decorepair.com';
+      input.setAttribute('aria-label', `Email address for ${name}`);
+      // Typing in here must not bubble into the row-expand handler either.
+      ['click', 'keydown', 'keyup'].forEach(t => input.addEventListener(t, e => e.stopPropagation()));
+      btn.replaceWith(input);
+      rosterEmailEditing = true;
+      input.focus();
+      input.select();
+
+      let settled = false;
+      const restore = (value, message, isError) => {
+        if (settled) return;
+        settled = true;
+        rosterEmailEditing = false;
+        person[ROSTER_EMAIL_COLUMN] = value;
+        const fresh = document.createElement('div');
+        fresh.innerHTML = rosterEmailCell(person);
+        const replacement = fresh.firstElementChild;
+        input.replaceWith(replacement);
+        wireRosterEmailCells(replacement.parentElement);
+        if (message && isError) showRosterEditError(message, "That email didn't reach the Roster", currentBoardFor(person));
+        else if (message) showRosterEditStatus(message, currentBoardFor(person));
+      };
+
+      const save = async () => {
+        if (settled) return;
+        const typed = input.value.trim();
+        if (typed === before) { restore(before, ''); return; }
+        if (typed && !looksLikeEmail(typed)) {
+          // Refused before any write — an address with no @ can only ever
+          // bounce, and finding that out at send time wastes the manager's go.
+          input.classList.add('is-bad');
+          input.focus();
+          return;
+        }
+        input.disabled = true;
+        try {
+          await writeRosterCell(name, ROSTER_EMAIL_COLUMN, typed);
+          restore(typed, typed
+            ? `Saved — feedback for ${name} will go to ${typed}.`
+            : `Saved — ${name} has no email address on the Roster now.`);
+        } catch (e) {
+          // The Sheet is the authority and it didn't take the change, so the
+          // cell goes back to what the Roster actually says, not to what was
+          // typed. Showing the typed value would be the app asserting an
+          // address the Roster hasn't got.
+          restore(before, `Couldn't save that address — ${e.message}`, true);
+        }
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+        else if (e.key === 'Escape') { e.preventDefault(); restore(before, ''); }
+        else input.classList.remove('is-bad');
+      });
+      input.addEventListener('blur', save);
+    });
+  });
+}
+
+// Which board's status line and error bar a message about this person belongs
+// on. Both boards are in the DOM at once and only one is visible, so a message
+// painted onto the wrong one is a message nobody sees.
+function currentBoardFor(person) {
+  return ROSTER_BOARDS.recruiting.includes(person) && !ROSTER_BOARDS.dashboard.includes(person)
+    ? ROSTER_BOARDS.recruiting
+    : (document.getElementById('tab-recruiting') && !document.getElementById('tab-recruiting').classList.contains('hidden')
+        ? ROSTER_BOARDS.recruiting : ROSTER_BOARDS.dashboard);
 }
 
 // The live value, read out of rosterRows rather than off a data attribute, so
@@ -5400,6 +5859,9 @@ function populateAddPersonChoices() {
   // The "also covers" field only exists if there's a column behind it.
   const coversField = document.getElementById('ap-covers-field');
   if (coversField) coversField.classList.toggle('hidden', !rosterHeaders.includes(ROSTER_COVERS_COLUMN));
+  // Same rule for the email field, and for the same reason.
+  const emailField = document.getElementById('ap-email-field');
+  if (emailField) emailField.classList.toggle('hidden', !rosterHeaders.includes(ROSTER_EMAIL_COLUMN));
 }
 
 // The free-text box only exists while "not listed" is picked, and is emptied
@@ -5520,6 +5982,10 @@ async function submitAddPerson() {
   // against the regions that already exist — a district manager taking on a new
   // territory is exactly when a new name appears here first.
   const covers = addPersonCoversValue(region);
+  // Optional, and blank is a perfectly good answer — it just means feedback
+  // can't be sent to them until somebody fills it in on the table.
+  const emailInput = document.getElementById('ap-email');
+  const email = rosterHeaders.includes(ROSTER_EMAIL_COLUMN) && emailInput ? emailInput.value.trim() : '';
 
   const complain = (msg, el) => { showAddPersonError(msg); if (el) el.focus(); };
   if (!rosterHeaders.length) return complain("The Roster hasn't loaded yet, so there's nothing to add to. Press Refresh first.");
@@ -5532,6 +5998,9 @@ async function submitAddPerson() {
   }
   if (!role) return complain('Pick a role, or add one that isn’t listed.', roleSel.value === ADD_PERSON_NEW_VALUE ? document.getElementById('ap-role-new') : roleSel);
   if (!region) return complain('Pick a region, or add one that isn’t listed.', regionSel.value === ADD_PERSON_NEW_VALUE ? document.getElementById('ap-region-new') : regionSel);
+  // Blank is fine; a typo is not. An address with no @ in it can only ever
+  // bounce, and finding that out weeks later at send time is the bad outcome.
+  if (email && !looksLikeEmail(email)) return complain('That email address doesn’t look right — check it, or leave it blank and add it later.', emailInput);
 
   showAddPersonError('');
   showRosterEditError('', '', board);
@@ -5544,7 +6013,7 @@ async function submitAddPerson() {
   [submitBtn, cancelBtn, openBtn].forEach(b => { if (b) b.disabled = true; });
   submitBtn.textContent = 'Adding…';
   try {
-    await addPersonToRoster(name, role, region, covers);
+    await addPersonToRoster(name, role, region, covers, email);
     // Re-read rather than pushing the person into rosterRows by hand — this is
     // what gives them their real Sheet row number, which every later write to
     // their row depends on.
@@ -5568,13 +6037,14 @@ async function submitAddPerson() {
 
 // One row appended, then read back. Built against the header row so a column
 // inserted into the Roster can't redirect a value into its neighbour's cell.
-async function addPersonToRoster(name, role, region, covers) {
+async function addPersonToRoster(name, role, region, covers, email) {
   if (!(await ensureFreshToken())) throw new Error('your Google sign-in has expired. Sign in again and retry.');
   const row = rosterHeaders.map(h => {
     if (h === 'Name') return name;
     if (h === 'Role') return role;
     if (h === 'Region') return region;
     if (h === ROSTER_COVERS_COLUMN) return covers || '';
+    if (h === ROSTER_EMAIL_COLUMN) return email || '';
     // Everything else — the four training steps and both certifications — is
     // left blank on purpose. Blank reads as Pending / Not yet, which is the
     // honest starting point for somebody who hasn't done any of it yet.
@@ -5913,12 +6383,38 @@ const TRANSCRIPT_LINK_IDX = 23;                    // X
 const HUMAN_SCORES_IDX = 24;                       // Y
 const HUMAN_SCORES_HEADER = 'Human Section Scores';
 
+/* ---- When this session's feedback was sent to the person it's about ----
+   Written by sendFeedbackEmail(), read by feedbackSentBlock(). One readable
+   string ("2026-09-08 to braydon@decorepair.com"), never parsed back apart —
+   it exists to answer "has this already gone out, and where to?", which is a
+   sentence, not a data structure. Compare that with column Y, which is JSON
+   precisely because its numbers have to round-trip exactly.
+
+   ON THE AI ROW where there is one, falling back to the manual row — and it
+   needs that fallback, unlike the follow-up state at T-V. Feedback can perfectly
+   well be sent on a manual-only grade (an audio-less paper evaluation has no AI
+   row at all), so this is the one extended column that cannot assume the AI row
+   exists. Read from either for the same reason.
+
+   Its real job is stopping the same feedback going out twice: nothing here
+   blocks a second send — a manager may genuinely want to resend a corrected
+   note — but the panel says what already went and when, so a resend is a
+   decision rather than an accident. */
+const FEEDBACK_SENT_IDX = 25;                      // Z
+const FEEDBACK_SENT_HEADER = 'Feedback Sent';
+
 // Every range that reads or clears a Grading Log row has to reach this far, or
 // a delete leaves a stray Yes behind and a read comes back without the tick.
-// Moved W -> X in V16 (a stranded transcript link), and X -> Y in 2026-08-14
-// for the human grades above — stopping short would leave a deleted session's
-// calibration grade behind, pointing at a recording that no longer exists.
-const GRADING_LOG_LAST_COLUMN = 'Y';
+// Moved W -> X in V16 (a stranded transcript link), X -> Y in 2026-08-14 for
+// the human grades above, and Y -> Z in 2026-09-08 for the feedback-sent stamp
+// — stopping short would leave a deleted session's calibration grade behind,
+// pointing at a recording that no longer exists.
+//
+// Z IS THE LAST COLUMN THIS PATTERN CAN USE. Every range built from this
+// constant is a single-letter A1 reference, and the Roster is read as A1:Z1000
+// besides — a 27th column means teaching columnLetter() and these ranges about
+// AA, not just bumping the letter.
+const GRADING_LOG_LAST_COLUMN = 'Z';
 
 // Is this ONE recording a pass? Both halves of the Smartsheet formula, or
 // nothing. Deliberately not named *Certifies any more: on a session type that
@@ -8847,6 +9343,403 @@ function aiCertifiedCell(aiRow) {
 // This puts the reason above the list, where it stays until the next attempt,
 // in the same loud shell as the un-certify offer and scrolled into view: the
 // delete button can be a long way down the list from the top of it.
+/* =====================================================================
+   SENDING A GRADED SESSION TO THE PERSON IT IS ABOUT
+   =====================================================================
+
+   Jordan, 2026-09-08: "it goes to the manager to review, and then to send it
+   off... when they get the feedback and the manager approves it, they can click
+   the send button."
+
+   THE MANAGER PRESSES SEND. NOTHING HERE EVER SENDS ON ITS OWN, and that is the
+   whole safety property — the same rule that stops an AI grade writing to the
+   Roster, one step further out. Nothing in this app is calibrated: five rubrics
+   went live over two days with no human comparison behind them, and on the one
+   Conversion Call with a per-category human grade the AI came in ABOVE the human
+   on every run. Feedback that let itself out of the building would be DECO
+   telling a field manager they failed on the authority of a number nobody has
+   checked. So: the app drafts, a person reads it, a person sends it.
+
+   Decisions worth not re-litigating:
+
+   - THE DRAFT IS FULLY EDITABLE BEFORE IT GOES. Not a preview — a textarea. It
+     is what makes including the AI's section scores (Jordan's explicit choice,
+     asked and answered) safe enough to do: a manager who reads a section score
+     that doesn't match the session they ran can delete the line rather than
+     having to choose between sending something wrong and sending nothing.
+   - THE MANAGER'S GRADE IS THE HEADLINE AND THE AI IS CLEARLY SECOND. The AI
+     block carries its own sentence saying it is a second opinion and that the
+     grade above is the one that counts. Ordering is not decoration here: this
+     email is the first thing in the whole project that an ungraded, uncalibrated
+     AI score is shown to somebody it is ABOUT rather than somebody grading them.
+   - IT SENDS AS THE MANAGER, from their own address, via the Gmail API with the
+     gmail.send scope. Routing it through Apps Script was considered and rejected
+     because that would send every manager's feedback from the script owner's
+     account. Feedback is from a person; it must look like it.
+   - A COPY GOES TO THE SENDER (Cc). They need it in their own sent mail to refer
+     back to in the coaching conversation, and it makes an accidental send
+     visible to the person who made it.
+   - THE SEND IS RECORDED (column Z) — but a second send is never BLOCKED. A
+     manager may want to resend a corrected note, and the app has no business
+     refusing. It states what already went out and when, so a resend is a
+     decision instead of an accident.
+   - A MISSING ADDRESS IS EXPLAINED, NOT HIDDEN. No email on the Roster shows the
+     reason and where to add it, rather than the button quietly being absent —
+     same rule as a missing certification column rendering a plain badge. */
+
+/* Is there anything here worth sending on? An AI read, a score, or a written
+   note — any one of them is feedback. A row with none of the three is a
+   "Did not attend" or an empty submission, and offering to email somebody an
+   empty page helps nobody. This is also what decides whether a session is
+   EXPANDABLE at all, so a manual score with no note and no AI grade now opens
+   (it didn't before) — otherwise the one thing that could be sent would be
+   sitting behind a row with no way to open it. */
+function feedbackWorthSending(sub, result) {
+  return !!result || manualGradeTotal(sub && sub.manualGrade) !== null || !!manualNoteOf(sub);
+}
+
+// The Grading Log row whose Z cell holds this session's stamp, and the header
+// beside it. Header rewritten on every send, like the follow-up columns do:
+// harmless, and it keeps the sheet self-explanatory for anyone opening it.
+async function recordFeedbackSent(sub, stamp) {
+  if (!sub.feedbackRowNumber) return;
+  const col = columnLetter(FEEDBACK_SENT_IDX);
+  await sheetsBatchUpdate(GRADING_SHEET_ID, [
+    { range: `${col}1`, values: [[FEEDBACK_SENT_HEADER]] },
+    { range: `${col}${sub.feedbackRowNumber}`, values: [[stamp]] }
+  ]);
+  // Keep the cached row in step so a re-filter or a re-open doesn't show this
+  // session as unsent again.
+  sub.feedbackSent = stamp;
+  const row = sub.aiRow;
+  if (row) row[FEEDBACK_SENT_IDX] = stamp;
+}
+
+function localDateStamp() {
+  const now = new Date();
+  // Local date, not toISOString() — BC is 7-8 hours behind UTC, so anything sent
+  // after ~4pm would otherwise be stamped with tomorrow's date. Same reason
+  // setFollowUpState builds its date this way.
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function feedbackFirstName(name) {
+  const first = (name || '').trim().split(/\s+/)[0];
+  return first || 'there';
+}
+
+/* The draft. Returns { subject, body } as plain text — deliberately not HTML.
+   A plain-text email renders identically in Gmail, Outlook, and on a phone with
+   no styling to go wrong, and this is a document somebody may well forward or
+   print. */
+function composeFeedbackEmail(sub, result) {
+  const type = sub.type || 'Training Day';
+  const words = verdictWords(type);
+  const max = SESSION_MAX_POSSIBLE[type];
+  const when = sub.when ? new Date(sub.when).toLocaleDateString() : '';
+  const grader = (sub.grader && sub.grader !== 'Did not attend') ? sub.grader : '';
+  const lines = [];
+
+  lines.push(`Hi ${feedbackFirstName(sub.trainee)},`);
+  lines.push('');
+  lines.push(`Here's your feedback from the ${type}${when ? ` on ${when}` : ''}.`);
+  lines.push('');
+
+  // --- The grade that counts, first and on its own. ---
+  const manualTotal = manualGradeTotal(sub.manualGrade);
+  lines.push('YOUR GRADE');
+  if (manualTotal !== null) {
+    /* The verdict word is only added where the row can actually settle it.
+       submissionPassedManually() is deliberately NOT used: it answers "could
+       this have certified them", so it returns false for a session type with no
+       certification column at all — which would print "Fail" on a passing
+       Networking Activity. And it folds a blank sections tick into a yes.
+
+       So the three cases are kept apart, the same way manualCertifiedCell draws
+       them: under the bar is a clear no; at or above it WITH the every-section
+       tick recorded is a clear yes; at or above it with the tick never recorded
+       gets the number and no verdict, because the second half of the rule was
+       never written down and this email must not invent it. */
+    const threshold = SESSION_PASS_THRESHOLD[type];
+    const ticked = (sub.sectionsAllPass || '').trim().toLowerCase();
+    let verdict = '';
+    if (threshold) {
+      if (manualTotal < threshold) verdict = ` — ${words.no}`;
+      else if (ticked === 'yes') verdict = ` — ${words.yes}`;
+    }
+    lines.push(`  ${manualTotal}${max ? ` out of ${max}` : ''}${verdict}`);
+  } else {
+    // Said out loud rather than left blank. A grade section with nothing in it
+    // reads as a score of zero to the person receiving it.
+    lines.push(`  Not scored${grader ? ` by ${grader}` : ''} — this session was reviewed rather than graded.`);
+  }
+  lines.push('');
+
+  // --- What the manager wrote. ---
+  const note = manualNoteOf(sub);
+  if (note) {
+    lines.push(grader ? `WHAT ${grader.toUpperCase()} WROTE` : 'NOTES FROM YOUR REVIEWER');
+    note.split('\n').forEach(l => lines.push(`  ${l}`));
+    lines.push('');
+  }
+
+  // --- The AI's read, clearly labelled and clearly secondary. ---
+  if (result && result.sections && Object.keys(result.sections).length) {
+    lines.push('WHAT THE AI PICKED UP FROM THE RECORDING');
+    lines.push('  This part was written by an AI listening back to the session. It is a');
+    lines.push('  second opinion to talk through, not a mark — the grade above is the one');
+    lines.push('  that counts.');
+    lines.push('');
+    Object.keys(result.sections).forEach(key => {
+      const section = result.sections[key];
+      const score = compareScoreOf(section);
+      // "Never came up" is not the same as a zero, and flattening the two would
+      // tell somebody they did badly at something the microphone simply never
+      // caught. Same distinction Follow-Ups and the results card both preserve.
+      lines.push(score === null
+        ? `  - ${sectionLabel(key)}: never came up on the recording (counts as 0)`
+        : `  - ${sectionLabel(key)}: ${score} out of 10`);
+    });
+    const aiTotal = Number(result.total_score);
+    if (!Number.isNaN(aiTotal)) {
+      lines.push('');
+      lines.push(`  AI total: ${aiTotal}${max ? ` out of ${max}` : ''}`);
+    }
+    lines.push('');
+  }
+
+  // --- What to actually do next. ---
+  const corrections = normalizeCorrections(result && result.corrections);
+  if (corrections.length) {
+    lines.push('TO FOLLOW UP ON');
+    corrections.forEach(c => {
+      lines.push(`  - ${c.section ? c.section + ': ' : ''}${c.issue}`);
+      lines.push(`    What to do: ${c.correct}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('Have a read and bring any questions to our next catch-up.');
+  lines.push('');
+  if (grader) lines.push(grader);
+  lines.push('');
+  lines.push('---');
+  lines.push('Sent from the DECO Development Dashboard.');
+
+  return {
+    subject: `Your ${type} feedback${when ? ` — ${when}` : ''}`,
+    body: lines.join('\n')
+  };
+}
+
+/* ---- Gmail plumbing ----
+   Base64url over UTF-8 bytes. btoa() alone throws on any character above U+00FF,
+   which an em dash or a name with an accent in it reaches immediately — so the
+   string goes through TextEncoder first. */
+function base64UrlEncode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  bytes.forEach(b => { binary += String.fromCharCode(b); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64Lines(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  bytes.forEach(b => { binary += String.fromCharCode(b); });
+  // Wrapped at 76 characters: SMTP caps a line at 998 and base64 bodies are
+  // conventionally folded. An unwrapped body works in practice and is one
+  // gateway away from not working.
+  return (btoa(binary).match(/.{1,76}/g) || []).join('\r\n');
+}
+
+// A header value that may hold non-ASCII, per RFC 2047. Subject lines here
+// carry an em dash, so this is the ordinary case rather than the exotic one.
+function encodeHeaderWord(text) {
+  return /^[\x20-\x7E]*$/.test(text) ? text : `=?UTF-8?B?${base64UrlEncode(text).replace(/-/g, '+').replace(/_/g, '/')}?=`;
+}
+
+async function gmailSend({ to, cc, subject, body }) {
+  if (!(await ensureFreshToken())) throw new Error('your Google sign-in has expired. Sign in again and retry.');
+  const headers = [
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : '',
+    `Subject: ${encodeHeaderWord(subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64'
+  ].filter(Boolean).join('\r\n');
+  // Assembled as one string and encoded once. Encoding the headers and the body
+  // separately and joining the two base64 blobs is the obvious-looking mistake
+  // here and produces a message no client can read — the padding lands mid-stream.
+  const message = headers + '\r\n\r\n' + base64Lines(body);
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: base64UrlEncode(message) })
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const err = await res.json();
+      detail = (err && err.error && err.error.message) || '';
+    } catch (e) { /* a non-JSON error body says nothing useful anyway */ }
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Google refused the send (${res.status}). ${detail || 'This usually means the permission to send email was not granted.'} Sign out and back in, and allow sending email when asked.`);
+    }
+    throw new Error(`Google refused the send (${res.status}). ${detail}`.trim());
+  }
+  return true;
+}
+
+/* ---- The panel ----
+   Drawn at the top of an expanded session, above the manager's note and the AI
+   card — the two things the manager is reading in order to decide whether to
+   send. */
+function renderFeedbackSender(sub, result, container) {
+  if (!container) return;
+  const name = sub.trainee || '';
+  const person = rosterPerson(name);
+  const email = person ? rosterEmailOf(person) : '';
+  const hasColumn = rosterHeaders.includes(ROSTER_EMAIL_COLUMN);
+
+  const sentLine = sub.feedbackSent
+    ? `<div class="fb-sent">${checkIcon()}<span>Already sent — ${escapeHtml(sub.feedbackSent)}</span></div>`
+    : '';
+
+  let blocker = '';
+  if (!hasColumn) {
+    blocker = 'The Roster has no Email column yet, so there is nowhere to keep addresses. There is a button to add it above the roster table on the Dashboard.';
+  } else if (!person) {
+    blocker = `"${name}" isn't on the Roster, so there is no address to send to. Names have to match the Roster exactly.`;
+  } else if (!email) {
+    blocker = `No email address on file for ${name}. Add one by clicking under their name on the Dashboard.`;
+  }
+
+  container.innerHTML =
+    `<div class="fb-sender">` +
+      `<div class="fb-head">` +
+        `<div class="fb-title">Send this feedback to ${escapeHtml(name || 'this person')}</div>` +
+        sentLine +
+      `</div>` +
+      (blocker
+        ? `<div class="fb-blocked">${escapeHtml(blocker)}</div>`
+        : `<div class="fb-actions">` +
+            `<button type="button" class="btn secondary fb-open">` +
+              `${sub.feedbackSent ? 'Write it again' : 'Write the email'}</button>` +
+            `<span class="fb-to">to ${escapeHtml(email)}</span>` +
+          `</div>` +
+          `<div class="fb-compose hidden"></div>`) +
+    `</div>`;
+
+  // The whole panel sits inside a row that collapses when clicked. Typing in a
+  // textarea must not shut the thing being typed into.
+  container.querySelector('.fb-sender').addEventListener('click', e => e.stopPropagation());
+  if (blocker) return;
+
+  const openBtn = container.querySelector('.fb-open');
+  const compose = container.querySelector('.fb-compose');
+  openBtn.addEventListener('click', () => {
+    if (!compose.classList.contains('hidden')) { compose.classList.add('hidden'); return; }
+    buildFeedbackCompose(sub, result, compose, email, openBtn);
+  });
+}
+
+function buildFeedbackCompose(sub, result, compose, email, openBtn) {
+  const draft = composeFeedbackEmail(sub, result);
+  const me = rememberedAccount || '';
+  compose.classList.remove('hidden');
+  compose.innerHTML =
+    `<label class="fb-label">To</label>` +
+    `<div class="fb-fixed">${escapeHtml(email)}${me ? ` <span class="fb-cc">— copy to you (${escapeHtml(me)})</span>` : ''}</div>` +
+    `<label class="fb-label" for="fb-subject-${sub.order}">Subject</label>` +
+    `<input type="text" class="fb-subject" id="fb-subject-${sub.order}" value="${escapeHtml(draft.subject)}">` +
+    `<label class="fb-label" for="fb-body-${sub.order}">Message — edit anything before it goes</label>` +
+    `<textarea class="fb-body" id="fb-body-${sub.order}" rows="18"></textarea>` +
+    `<div class="fb-send-row">` +
+      `<button type="button" class="btn fb-send">Send it</button>` +
+      `<button type="button" class="btn secondary fb-cancel">Cancel</button>` +
+      `<span class="fb-status"></span>` +
+    `</div>`;
+  // Set as a value rather than interpolated into the markup: the body is long,
+  // multi-line, and full of characters that would have to survive two rounds of
+  // escaping to come out right.
+  const bodyEl = compose.querySelector('.fb-body');
+  bodyEl.value = draft.body;
+
+  const statusEl = compose.querySelector('.fb-status');
+  const sendBtn = compose.querySelector('.fb-send');
+  compose.querySelector('.fb-cancel').addEventListener('click', () => compose.classList.add('hidden'));
+
+  sendBtn.addEventListener('click', async () => {
+    const subject = compose.querySelector('.fb-subject').value.trim();
+    const body = bodyEl.value;
+    if (!subject) { statusEl.textContent = 'Give it a subject line first.'; statusEl.className = 'fb-status is-err'; return; }
+    if (!body.trim()) { statusEl.textContent = 'The message is empty.'; statusEl.className = 'fb-status is-err'; return; }
+
+    sendBtn.disabled = true;
+    statusEl.className = 'fb-status';
+    try {
+      // Asked for at the last possible moment, and only if it isn't already
+      // held: somebody who never sends feedback should never see this screen.
+      if (!hasGmailScope()) {
+        statusEl.textContent = 'Asking Google for permission to send email…';
+        const granted = await requestGmailPermission();
+        if (!granted) {
+          throw new Error('permission to send email was not granted. Press Send again and choose Allow, or sign out and back in.');
+        }
+      }
+      statusEl.textContent = 'Sending…';
+      await gmailSend({ to: email, cc: rememberedAccount || '', subject, body });
+
+      // Sent is sent. From here nothing may throw in a way that suggests it
+      // wasn't — a failure to write the stamp is a bookkeeping problem, and
+      // saying "couldn't send" over an email already in somebody's inbox is
+      // far worse than an unrecorded send.
+      const stamp = `${localDateStamp()} to ${email}`;
+      let recorded = true;
+      try {
+        await recordFeedbackSent(sub, stamp);
+      } catch (e) { recorded = false; }
+
+      statusEl.className = 'fb-status is-ok';
+      statusEl.textContent = recorded
+        ? `Sent to ${email}.`
+        : `Sent to ${email} — but the Grading Log couldn't be updated, so this session won't show as sent.`;
+      compose.classList.add('hidden');
+      openBtn.textContent = 'Write it again';
+      const head = openBtn.closest('.fb-sender').querySelector('.fb-head');
+      if (head && !head.querySelector('.fb-sent')) {
+        const el = document.createElement('div');
+        el.className = 'fb-sent';
+        el.innerHTML = `${checkIcon()}<span>Already sent — ${escapeHtml(stamp)}</span>`;
+        head.appendChild(el);
+      }
+      showFeedbackSentToast(`Feedback sent to ${email}.`);
+    } catch (e) {
+      statusEl.className = 'fb-status is-err';
+      statusEl.textContent = `Not sent — ${e.message}`;
+      sendBtn.disabled = false;
+    }
+  });
+}
+
+// The compose panel collapses on success, so the confirmation needs somewhere
+// to live that isn't inside it.
+function showFeedbackSentToast(message) {
+  let el = document.getElementById('fb-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fb-toast';
+    el.className = 'fb-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(showFeedbackSentToast.timer);
+  showFeedbackSentToast.timer = setTimeout(() => el.classList.remove('show'), 6000);
+}
+
 function showLogDeleteError(message) {
   const wrap = document.getElementById('recent-log-wrap');
   if (!wrap) return;
@@ -9053,10 +9946,11 @@ function showUncertifyOffer(name, sessionType, announce = true, onFile = 0) {
 // that knows how the sheet's rows map onto sessions, rather than two copies
 // that can drift apart.
 async function fetchSubmissions() {
-  // Out to Y: A-S is everything Code.gs writes, T-V is the follow-up state this
+  // Out to Z: A-S is everything Code.gs writes, T-V is the follow-up state this
   // page adds afterwards (see FOLLOWUP_* below), W is the sections tick off the
   // manual row (MANUAL_SECTIONS_IDX), X is the transcript link Code.gs writes,
-  // and Y is the human grader's own scores (HUMAN_SCORES_IDX).
+  // Y is the human grader's own scores (HUMAN_SCORES_IDX), and Z records when
+  // this session's feedback was emailed out (FEEDBACK_SENT_IDX).
   const rows = await sheetsGet(GRADING_SHEET_ID, `A1:${GRADING_LOG_LAST_COLUMN}1000`);
   if (rows.length <= 1) return [];
   // Track each row's real sheet row number (1-indexed, header is row 1) before
@@ -9106,6 +10000,12 @@ async function fetchSubmissions() {
       // Written by Code.gs onto the AI row, so read it from there — a manual row
       // never has one. Blank on every session graded before V16.
       transcriptLink: (ai && ai.r[TRANSCRIPT_LINK_IDX]) || '',
+      // Read from either row: written to the AI row when there is one, but a
+      // manual-only session has feedback to send and no AI row to put it on.
+      feedbackSent: ((ai && ai.r[FEEDBACK_SENT_IDX]) || (manual && manual.r[FEEDBACK_SENT_IDX]) || '').trim(),
+      // Where the stamp goes. The AI row if it exists, else the manual one —
+      // the same row either way, so a resend overwrites rather than accumulates.
+      feedbackRowNumber: ai ? ai.rowNumber : (manual ? manual.rowNumber : null),
       aiRow: ai ? ai.r : null,
       // Follow-up state is written onto the AI row, because that's the row
       // carrying the score that put the session on the list in the first place.
@@ -9124,6 +10024,8 @@ async function fetchSubmissions() {
       audioLink: r[6],
       humanScores: parseHumanScores(r[HUMAN_SCORES_IDX] || ''),
       transcriptLink: r[7] === 'AI' ? (r[TRANSCRIPT_LINK_IDX] || '') : '',
+      feedbackSent: (r[FEEDBACK_SENT_IDX] || '').trim(),
+      feedbackRowNumber: rowNumber,
       aiRow: r[7] === 'AI' ? r : null,
       aiRowNumber: r[7] === 'AI' ? rowNumber : null
     });
@@ -9171,7 +10073,9 @@ async function loadRecentLog() {
       // whole reason to open it, and gating on the AI result would keep it
       // hidden on exactly the sessions that have nothing else to show.
       const noteHtml = managerNoteBlock(s);
-      const canExpand = hasAi || !!noteHtml;
+      // ...and so does anything that can be sent on to the person it's about,
+      // which a bare manual score now can be.
+      const canExpand = hasAi || !!noteHtml || feedbackWorthSending(s, parsedAi[i]);
       const chevron = canExpand ? '<span class="log-chevron">&#9656;</span>' : '';
       const manualGradeCell = s.manualGrade
         ? escapeHtml(s.manualGrade)
@@ -9193,6 +10097,7 @@ async function loadRecentLog() {
         // The AI box is left empty on a note-only row, and .ai-result-box:empty
         // hides it — so no bare panel under the note.
         html += `<tr class="log-detail-row hidden" data-row-index="${i}"><td colspan="10">` +
+          `<div class="fb-host" id="log-fb-${i}"></div>` +
           noteHtml + `<div class="ai-result-box" id="log-detail-${i}"></div></td></tr>`;
       }
     });
@@ -9208,9 +10113,9 @@ async function loadRecentLog() {
       const aiResult = parsedAi[i];
       const headerRow = wrap.querySelector(`tr.log-row[data-row-index="${i}"]`);
       const detailRow = wrap.querySelector(`tr.log-detail-row[data-row-index="${i}"]`);
-      // No detail row means nothing to open — neither an AI grade nor a note.
+      // No detail row means nothing to open — no AI grade, no note, and nothing to send.
       if (!headerRow || !detailRow) return;
-      let rendered = false;
+      let rendered = false, fbRendered = false;
       headerRow.addEventListener('click', () => {
         const isOpen = headerRow.classList.contains('open');
         wrap.querySelectorAll('.log-row.open').forEach(el => {
@@ -9221,8 +10126,16 @@ async function loadRecentLog() {
         if (!isOpen) {
           headerRow.classList.add('open');
           detailRow.classList.remove('hidden');
-          // The note is already in the markup; only the AI card is built lazily,
-          // and a note-only row has no card to build.
+          // The note is already in the markup; the send panel and the AI card
+          // are built lazily, and a note-only row has no card to build.
+          // Tracked on its own flag, not `rendered`: that one only ever gets
+          // set when there IS an AI card, so a manual-only row would rebuild
+          // the send panel on every open — throwing away a half-written email
+          // if somebody collapsed the row and opened it again.
+          if (!fbRendered && feedbackWorthSending(s, aiResult)) {
+            fbRendered = true;
+            renderFeedbackSender(s, aiResult, document.getElementById(`log-fb-${i}`));
+          }
           if (!rendered && aiResult) {
             // The audio link in column G is the only place a logged row records
             // which recording it came from — pull the Drive ID back out of it so
@@ -10382,6 +11295,9 @@ function renderFollowUps() {
         `<button type="button" class="btn secondary fu-note-save" data-row-index="${i}">Save note</button>` +
         `<span class="followup-saved hidden">Saved</span>` +
       `</div>` +
+      // The send panel first: this is the coaching queue, so "get this to the
+      // person" is the action the row exists for.
+      `<div class="fb-host" id="fu-fb-${i}"></div>` +
       // What the grader wrote at submission time, above the AI's card — on a
       // coaching queue that context is worth as much as the score is.
       managerNoteBlock(item.sub) +
@@ -10410,8 +11326,9 @@ function renderFollowUps() {
         headerRow.classList.add('open');
         detailRow.classList.remove('hidden');
         if (!rendered) {
-          renderAiGradingResult(item.result, document.getElementById(`fu-detail-${i}`), driveFileIdFromLink(audioLinkOf(item.sub.audioLink)), item.sub.transcriptLink);
           rendered = true;
+          renderFeedbackSender(item.sub, item.result, document.getElementById(`fu-fb-${i}`));
+          renderAiGradingResult(item.result, document.getElementById(`fu-detail-${i}`), driveFileIdFromLink(audioLinkOf(item.sub.audioLink)), item.sub.transcriptLink);
         }
       }
     });
