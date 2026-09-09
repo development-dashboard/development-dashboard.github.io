@@ -2382,6 +2382,25 @@
     min-height: 220px;
   }
   .fb-subject:focus, .fb-body:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The covering note is prose, not a plain-text email any more, so it gets the
+     page's own font rather than the monospace the whole body used to need. */
+  .fb-message { font-family: inherit; font-size: 12.5px; line-height: 1.6; min-height: 0; }
+  .fb-includes { display: flex; flex-direction: column; gap: 9px; }
+  .fb-include { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; }
+  .fb-include input { margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+  .fb-include-name { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+  .fb-include-hint { display: block; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); margin-top: 2px; }
+  /* A real frame, not a styled div — the email is a whole document with its own
+     background, and rendering it inline would let this page's stylesheet reach
+     into it and show a preview nobody will ever receive. */
+  .fb-preview {
+    display: block;
+    width: 100%;
+    height: 460px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    background: #faf7f1;
+  }
   .fb-send-row { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-top: 12px; }
   .fb-status { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
   .fb-status.is-ok { color: color-mix(in srgb, var(--good) 82%, var(--text-primary)); }
@@ -9428,108 +9447,387 @@ function feedbackFirstName(name) {
   return first || 'there';
 }
 
-/* The draft. Returns { subject, body } as plain text — deliberately not HTML.
-   A plain-text email renders identically in Gmail, Outlook, and on a phone with
-   no styling to go wrong, and this is a document somebody may well forward or
-   print. */
-function composeFeedbackEmail(sub, result) {
+/* =====================================================================
+   WHAT THE EMAIL ACTUALLY CARRIES
+   =====================================================================
+
+   Jordan, 2026-09-09, looking at a full result card: *"For the email can you
+   send a PDF file of the breakdown ... exactly how it looks. It would be great
+   if they got all that info"* — then, relaxing it: *"does not have to be a pdf
+   but just something."*
+
+   IT IS AN HTML EMAIL, NOT A PDF, and that was a decision rather than a
+   shortcut:
+   - There is no PDF library available here (no node, no python — see the
+     harness note in CLAUDE.md), and doing it browser-side with
+     html2canvas/jsPDF renders the card to a bitmap: unsearchable, unselectable,
+     bad on a phone, and heavy on an attachment.
+   - A PDF attachment gets opened later, or not at all. A body renders the
+     moment they open the mail, on a phone, in the thread they will reply to.
+   - Anyone who genuinely wants the PDF can print the email to one, which is
+     the same output with none of the build.
+
+   IT IS A SEPARATE RENDERER, NOT A REUSE OF `renderAiGradingResult`, and it has
+   to be. That card is built out of exactly the things email clients throw away:
+   CSS custom properties (unsupported outright — every token would resolve to
+   nothing), flexbox and grid (Outlook renders through Word), container queries,
+   `::after` pseudo-elements, and an external `<style>` block. So this is
+   table-based with inline styles on every element, in a fixed LIGHT palette —
+   the tokens written out by hand, because there is nothing to read them from.
+
+   ONE DATA LAYER, TWO RENDERINGS. `feedbackData()` decides what the feedback
+   *is*; the text and HTML renderers only decide how it looks. Two functions
+   each deciding for themselves what to include is how the plain-text fallback
+   and the HTML body start disagreeing about somebody's grade. */
+
+// Written out because email clients have no custom properties. Mirrors the
+// light-mode tokens at :root — if those change, these do not follow.
+const FB_MAIL = {
+  page: '#faf7f1', card: '#ffffff', sunken: '#f5f1e8',
+  text: '#14110d', text2: '#554c40', muted: '#7d7463',
+  line: '#ece4d6', border: '#e3dccf',
+  orange: '#ef7f23', accent: '#a44e0b',
+  good: '#0f8a3c', warn: '#a16207', bad: '#cf3a3a'
+};
+
+// Which blocks of the card go in. Sections, the callouts and the corrections
+// are the feedback; REVIEWER NOTES ARE DELIBERATELY OFF BY DEFAULT — they are
+// addressed to the grader, not to the person graded, and in practice carry
+// things like "the interviewer introduced himself as Ronel, but the session
+// context lists Jordan Evans" (a mis-filed form) and AUTOMATIC FAIL CONDITION
+// lines. Those belong in a conversation between managers. There is a tick to
+// include them for whoever decides otherwise on a given session.
+const FEEDBACK_DEFAULT_INCLUDE = { sections: true, callouts: true, corrections: true, notes: false };
+
+/* Everything the email might say, worked out once. Both renderers read this and
+   neither derives anything of its own. */
+function feedbackData(sub, result) {
   const type = sub.type || 'Training Day';
   const words = verdictWords(type);
   const max = SESSION_MAX_POSSIBLE[type];
-  const when = sub.when ? new Date(sub.when).toLocaleDateString() : '';
-  const grader = (sub.grader && sub.grader !== 'Did not attend') ? sub.grader : '';
-  const lines = [];
-
-  lines.push(`Hi ${feedbackFirstName(sub.trainee)},`);
-  lines.push('');
-  lines.push(`Here's your feedback from the ${type}${when ? ` on ${when}` : ''}.`);
-  lines.push('');
-
-  // --- The grade that counts, first and on its own. ---
+  const threshold = SESSION_PASS_THRESHOLD[type];
   const manualTotal = manualGradeTotal(sub.manualGrade);
-  lines.push('YOUR GRADE');
-  if (manualTotal !== null) {
-    /* The verdict word is only added where the row can actually settle it.
-       submissionPassedManually() is deliberately NOT used: it answers "could
-       this have certified them", so it returns false for a session type with no
-       certification column at all — which would print "Fail" on a passing
-       Networking Activity. And it folds a blank sections tick into a yes.
 
-       So the three cases are kept apart, the same way manualCertifiedCell draws
-       them: under the bar is a clear no; at or above it WITH the every-section
-       tick recorded is a clear yes; at or above it with the tick never recorded
-       gets the number and no verdict, because the second half of the rule was
-       never written down and this email must not invent it. */
-    const threshold = SESSION_PASS_THRESHOLD[type];
-    const ticked = (sub.sectionsAllPass || '').trim().toLowerCase();
-    let verdict = '';
-    if (threshold) {
-      if (manualTotal < threshold) verdict = ` — ${words.no}`;
-      else if (ticked === 'yes') verdict = ` — ${words.yes}`;
-    }
-    lines.push(`  ${manualTotal}${max ? ` out of ${max}` : ''}${verdict}`);
+  /* The verdict word is only added where the row can actually settle it.
+     submissionPassedManually() is deliberately NOT used: it answers "could this
+     have certified them", so it returns false for a session type with no
+     certification column — which would print "Fail" on a passing Networking
+     Activity — and it folds a blank sections tick into a yes.
+
+     Three cases, drawn the way manualCertifiedCell draws them: under the bar is
+     a clear no; at or above it WITH the every-section tick recorded is a clear
+     yes; at or above it with the tick never recorded gets the number and no
+     verdict, because the second half of the rule was never written down and
+     this email must not invent it. */
+  const ticked = (sub.sectionsAllPass || '').trim().toLowerCase();
+  let verdict = '';
+  if (threshold && manualTotal !== null) {
+    if (manualTotal < threshold) verdict = words.no;
+    else if (ticked === 'yes') verdict = words.yes;
+  }
+
+  const sections = Object.entries((result && result.sections) || {}).map(([key, val]) => {
+    // Mirrors compareScoreOf() and followUpReasons() exactly, and has to keep
+    // doing so: a section with no confident score counts as 0 in the total by
+    // rubric rule, but it is NOT the same as having scored 0, and this email is
+    // the one place that distinction reaches the person it is about.
+    const noScore = val.score === null || val.score === undefined ||
+      val.evidence_basis === 'insufficient_evidence' || val.evidence_basis === 'inconsistent_across_runs';
+    const clips = (Array.isArray(val.evidence_clips) ? val.evidence_clips : []).map(c => {
+      const secs = parseClipSeconds(c && c.at);
+      return secs === null ? null : { at: formatClipTime(secs), quote: String((c && c.quote) || '').trim(), runs: Number(c && c.runs) || 0 };
+    }).filter(Boolean);
+    return {
+      label: sectionLabel(key),
+      score: noScore ? null : Number(val.score),
+      covered: String(val.covered || val.evidence || '').trim(),
+      missed: String(val.missed || '').trim(),
+      why: String(val.justification || '').trim(),
+      clips,
+      flagged: !!val.needs_human_review
+    };
+  });
+
+  const list = v => (Array.isArray(v) ? v.map(x => String(x || '').trim()).filter(Boolean) : []);
+  return {
+    type, words, max, threshold, manualTotal, verdict,
+    when: sub.when ? new Date(sub.when).toLocaleDateString() : '',
+    person: sub.trainee || '',
+    grader: (sub.grader && sub.grader !== 'Did not attend') ? sub.grader : '',
+    note: manualNoteOf(sub),
+    audioLink: audioLinkOf(sub.audioLink),
+    aiTotal: result && !Number.isNaN(Number(result.total_score)) ? Number(result.total_score) : null,
+    sections,
+    scoredLow: sections.filter(s => s.score !== null && s.score < SECTION_PASS_MARK).length,
+    notHeard: sections.filter(s => s.score === null).length,
+    strong: list(result && result.strong_areas),
+    weak: list(result && result.weak_areas),
+    focus: list(result && result.focus_areas),
+    corrections: normalizeCorrections(result && result.corrections),
+    reviewerNotes: String((result && result.notes_for_human_reviewer) || '')
+      .split('|').map(s => s.trim().replace(/^[-–—]\s*/, '')).filter(Boolean)
+  };
+}
+
+// The short personal note at the top — the only part that starts as editable
+// prose. Everything below it in the email is the card, rendered.
+function feedbackMessageDraft(sub) {
+  const d = feedbackData(sub, null);
+  const lines = [
+    `Hi ${feedbackFirstName(sub.trainee)},`,
+    '',
+    `Here's your feedback from the ${d.type}${d.when ? ` on ${d.when}` : ''}. Have a read and bring any questions to our next catch-up.`,
+    ''
+  ];
+  if (d.grader) lines.push(d.grader);
+  return lines.join('\n');
+}
+
+function feedbackSubject(sub) {
+  const type = sub.type || 'Training Day';
+  const when = sub.when ? new Date(sub.when).toLocaleDateString() : '';
+  return `Your ${type} feedback${when ? ` — ${when}` : ''}`;
+}
+
+/* The plain-text half of the message. Not a lesser version kept out of habit —
+   it is the `multipart/alternative` fallback, so it has to say the same things
+   the HTML does for any client that won't render the HTML at all. */
+function feedbackEmailText(sub, result, message, include) {
+  const d = feedbackData(sub, result);
+  const inc = Object.assign({}, FEEDBACK_DEFAULT_INCLUDE, include || {});
+  const lines = [];
+  lines.push(String(message || '').replace(/\s+$/, ''));
+  lines.push('');
+  lines.push('YOUR GRADE');
+  if (d.manualTotal !== null) {
+    lines.push(`  ${d.manualTotal}${d.max ? ` out of ${d.max}` : ''}${d.verdict ? ` — ${d.verdict}` : ''}`);
   } else {
-    // Said out loud rather than left blank. A grade section with nothing in it
-    // reads as a score of zero to the person receiving it.
-    lines.push(`  Not scored${grader ? ` by ${grader}` : ''} — this session was reviewed rather than graded.`);
+    lines.push(`  Not scored${d.grader ? ` by ${d.grader}` : ''} — this session was reviewed rather than graded.`);
   }
   lines.push('');
 
-  // --- What the manager wrote. ---
-  const note = manualNoteOf(sub);
-  if (note) {
-    lines.push(grader ? `WHAT ${grader.toUpperCase()} WROTE` : 'NOTES FROM YOUR REVIEWER');
-    note.split('\n').forEach(l => lines.push(`  ${l}`));
+  if (d.note) {
+    lines.push(d.grader ? `WHAT ${d.grader.toUpperCase()} WROTE` : 'NOTES FROM YOUR REVIEWER');
+    d.note.split('\n').forEach(l => lines.push(`  ${l}`));
     lines.push('');
   }
 
-  // --- The AI's read, clearly labelled and clearly secondary. ---
-  if (result && result.sections && Object.keys(result.sections).length) {
+  if (inc.sections && d.sections.length) {
     lines.push('WHAT THE AI PICKED UP FROM THE RECORDING');
-    lines.push('  This part was written by an AI listening back to the session. It is a');
-    lines.push('  second opinion to talk through, not a mark — the grade above is the one');
-    lines.push('  that counts.');
+    lines.push('  Written by an AI listening back to the session. A second opinion to');
+    lines.push('  talk through, not a mark — the grade above is the one that counts.');
     lines.push('');
-    Object.keys(result.sections).forEach(key => {
-      const section = result.sections[key];
-      const score = compareScoreOf(section);
-      // "Never came up" is not the same as a zero, and flattening the two would
-      // tell somebody they did badly at something the microphone simply never
-      // caught. Same distinction Follow-Ups and the results card both preserve.
-      lines.push(score === null
-        ? `  - ${sectionLabel(key)}: never came up on the recording (counts as 0)`
-        : `  - ${sectionLabel(key)}: ${score} out of 10`);
-    });
-    const aiTotal = Number(result.total_score);
-    if (!Number.isNaN(aiTotal)) {
+    d.sections.forEach(s => {
+      lines.push(s.score === null
+        ? `  ${s.label} — never came up on the recording (counts as 0)`
+        : `  ${s.label} — ${s.score} out of 10`);
+      if (s.covered) lines.push(`      Talked about: ${s.covered}`);
+      if (s.missed) lines.push(`      Missed: ${s.missed}`);
+      if (s.why) lines.push(`      Why: ${s.why}`);
+      s.clips.forEach(c => lines.push(`      Listen at ${c.at}${c.quote ? ` — "${c.quote}"` : ''}`));
       lines.push('');
-      lines.push(`  AI total: ${aiTotal}${max ? ` out of ${max}` : ''}`);
-    }
-    lines.push('');
+    });
+    if (d.aiTotal !== null) { lines.push(`  AI total: ${d.aiTotal}${d.max ? ` out of ${d.max}` : ''}`); lines.push(''); }
   }
 
-  // --- What to actually do next. ---
-  const corrections = normalizeCorrections(result && result.corrections);
-  if (corrections.length) {
+  if (inc.callouts) {
+    [['STRONG AREAS', d.strong], ['WEAK AREAS', d.weak], ['FOCUS AREAS', d.focus]].forEach(([head, items]) => {
+      if (!items.length) return;
+      lines.push(head);
+      items.forEach(i => lines.push(`  - ${i}`));
+      lines.push('');
+    });
+  }
+
+  if (inc.corrections && d.corrections.length) {
     lines.push('TO FOLLOW UP ON');
-    corrections.forEach(c => {
+    d.corrections.forEach(c => {
       lines.push(`  - ${c.section ? c.section + ': ' : ''}${c.issue}`);
       lines.push(`    What to do: ${c.correct}`);
+      if (c.at) lines.push(`    Heard at ${c.at}`);
     });
     lines.push('');
   }
 
-  lines.push('Have a read and bring any questions to our next catch-up.');
-  lines.push('');
-  if (grader) lines.push(grader);
-  lines.push('');
-  lines.push('---');
-  lines.push('Sent from the DECO Development Dashboard.');
+  if (inc.notes && d.reviewerNotes.length) {
+    lines.push('REVIEWER NOTES');
+    d.reviewerNotes.forEach(n => lines.push(`  - ${n}`));
+    lines.push('');
+  }
 
-  return {
-    subject: `Your ${type} feedback${when ? ` — ${when}` : ''}`,
-    body: lines.join('\n')
-  };
+  if (d.audioLink) { lines.push(`Listen to the recording: ${d.audioLink}`); lines.push(''); }
+  lines.push('---');
+  lines.push("The AI section scores above are its read of the recording. They're here to");
+  lines.push('inform your manager’s grade, not to replace it.');
+  lines.push('Sent from the DECO Development Dashboard.');
+  return lines.join('\n');
+}
+
+/* ---- The HTML half ----
+   Tables and inline styles throughout. Every colour is a literal. No <style>
+   block, no classes, no custom properties — see the note at the top of this
+   section for why none of those survive the trip. */
+function feedbackEmailHtml(sub, result, message, include) {
+  const d = feedbackData(sub, result);
+  const inc = Object.assign({}, FEEDBACK_DEFAULT_INCLUDE, include || {});
+  const e = escapeHtml;
+  const C = FB_MAIL;
+  const sans = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+  const card = (inner, pad) =>
+    `<tr><td style="padding:0 0 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"` +
+    ` style="background:${C.card};border:1px solid ${C.border};border-radius:10px;">` +
+    `<tr><td style="padding:${pad || '18px 20px'};">${inner}</td></tr></table></td></tr>`;
+  const heading = t =>
+    `<div style="font:700 11px ${sans};letter-spacing:.09em;text-transform:uppercase;color:${C.muted};padding-bottom:8px;">${e(t)}</div>`;
+  const scoreColour = s => s === null ? C.bad : s >= 8 ? C.good : s >= 5 ? C.warn : C.bad;
+
+  // --- Hero: the manager's grade, which is the grade that counts. ---
+  let hero = `<div style="font:700 11px ${sans};letter-spacing:.09em;text-transform:uppercase;color:${C.muted};">Your grade</div>`;
+  if (d.manualTotal !== null) {
+    const pct = d.max ? Math.round((d.manualTotal / d.max) * 100) : null;
+    hero += `<div style="font:700 46px/1.05 ${sans};color:${C.text};padding-top:6px;">${e(String(d.manualTotal))}` +
+      (d.max ? `<span style="font-size:22px;color:${C.muted};font-weight:600;"> / ${e(String(d.max))}</span>` : '') + `</div>`;
+    if (pct !== null) hero += `<div style="font:600 13px ${sans};color:${C.text2};padding-top:6px;">${pct}% overall</div>`;
+    if (d.verdict) {
+      const good = d.verdict === d.words.yes;
+      hero += `<div style="padding-top:12px;"><span style="display:inline-block;font:700 13px ${sans};padding:7px 18px;border-radius:999px;` +
+        `color:#ffffff;background:${good ? C.good : C.bad};">${e(d.verdict)}</span></div>`;
+    }
+  } else {
+    hero += `<div style="font:600 15px ${sans};color:${C.text};padding-top:8px;">Not scored${d.grader ? ` by ${e(d.grader)}` : ''} — this session was reviewed rather than graded.</div>`;
+  }
+
+  // --- What the manager wrote. ---
+  let noteBlock = '';
+  if (d.note) {
+    noteBlock = card(
+      heading(d.grader ? `What ${d.grader} wrote` : 'Notes from your reviewer') +
+      `<div style="font:400 14px/1.6 ${sans};color:${C.text};white-space:pre-wrap;">${e(d.note)}</div>`
+    );
+  }
+
+  // --- The sections. One table per section: score column, then the three
+  //     text columns the card shows. ---
+  let sectionBlock = '';
+  if (inc.sections && d.sections.length) {
+    const rows = d.sections.map((s, i) => {
+      const colour = scoreColour(s.score);
+      const scoreTxt = s.score === null ? '0/10' : `${s.score}/10`;
+      const clips = s.clips.map(c =>
+        `<div style="padding-top:6px;">` +
+          `<span style="display:inline-block;font:700 12px ${sans};color:${C.accent};background:${C.sunken};border:1px solid ${C.border};border-radius:6px;padding:2px 7px;">${e(c.at)}</span>` +
+          (c.runs >= CLIP_CORROBORATION_MIN_RUNS ? `<div style="font:600 10.5px ${sans};color:${C.muted};padding-top:3px;">${c.runs} passes point here</div>` : '') +
+          (c.quote ? `<div style="font:italic 400 11.5px/1.45 ${sans};color:${C.text2};padding-top:2px;">&ldquo;${e(shortQuote(c.quote, 7))}&rdquo;</div>` : '') +
+        `</div>`).join('');
+      const cell = (label, text) => text
+        ? `<td width="30%" valign="top" style="padding:0 10px 0 0;">` +
+            `<div style="font:700 10px ${sans};letter-spacing:.08em;text-transform:uppercase;color:${C.muted};padding-bottom:4px;">${e(label)}</div>` +
+            `<div style="font:400 13px/1.55 ${sans};color:${C.text};">${e(text)}</div></td>`
+        : `<td width="30%" valign="top" style="padding:0 10px 0 0;"><div style="font:700 10px ${sans};letter-spacing:.08em;text-transform:uppercase;color:${C.muted};padding-bottom:4px;">${e(label)}</div>` +
+            `<div style="font:400 13px ${sans};color:${C.muted};">&mdash;</div></td>`;
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"` +
+        ` style="${i ? `border-top:1px solid ${C.line};` : ''}padding:0;">` +
+        `<tr><td style="padding:${i ? '16px' : '0'} 0 16px;">` +
+          `<div style="font:700 14px ${sans};color:${C.text};padding-bottom:10px;">${e(s.label)}` +
+            (s.flagged ? ` <span style="font:700 10px ${sans};color:${C.warn};border:1px solid ${C.warn};border-radius:5px;padding:1px 6px;">Double-check</span>` : '') +
+          `</div>` +
+          `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>` +
+            `<td width="16%" valign="top" style="padding:0 12px 0 0;">` +
+              `<span style="display:inline-block;font:700 13px ${sans};color:#ffffff;background:${colour};border-radius:6px;padding:3px 9px;">${e(scoreTxt)}</span>` +
+              (s.score === null ? `<div style="font:400 10.5px/1.4 ${sans};color:${C.muted};padding-top:5px;">never came up &mdash; counts as 0</div>` : '') +
+              clips +
+            `</td>` +
+            cell('Talked about', s.covered) + cell('Missed', s.missed) + cell('Why', s.why) +
+          `</tr></table>` +
+        `</td></tr></table>`;
+    }).join('');
+    sectionBlock = card(
+      heading('What the AI picked up from the recording') +
+      `<div style="font:400 12.5px/1.6 ${sans};color:${C.text2};padding-bottom:14px;">` +
+        `Written by an AI listening back to the session. It&rsquo;s a second opinion to talk through, not a mark &mdash; ` +
+        `the grade above is the one that counts.</div>` +
+      rows +
+      (d.aiTotal !== null
+        ? `<div style="border-top:1px solid ${C.line};padding-top:12px;font:600 13px ${sans};color:${C.text2};">` +
+          `AI total: <strong style="color:${C.text};">${e(String(d.aiTotal))}${d.max ? ` / ${e(String(d.max))}` : ''}</strong>` +
+          (d.notHeard ? ` &middot; ${d.notHeard} section${d.notHeard === 1 ? '' : 's'} never came up on the recording` : '') +
+          `</div>`
+        : '')
+    );
+  }
+
+  // --- Strong / weak / focus. Stacked, not three columns: three narrow
+  //     columns are unreadable on a phone and Outlook will not reflow them. ---
+  let calloutBlock = '';
+  if (inc.callouts) {
+    const one = (label, tone, items) => items.length
+      ? `<div style="border-left:4px solid ${tone};background:${C.sunken};border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:10px;">` +
+          `<div style="font:700 11px ${sans};letter-spacing:.08em;text-transform:uppercase;color:${tone};padding-bottom:6px;">${e(label)}</div>` +
+          items.map(t => `<div style="font:400 13px/1.55 ${sans};color:${C.text};padding-bottom:4px;">${e(t)}</div>`).join('') +
+        `</div>`
+      : '';
+    const body = one('Strong areas', C.good, d.strong) + one('Weak areas', C.warn, d.weak) + one('Focus areas', C.accent, d.focus);
+    if (body) calloutBlock = card(body, '16px 18px');
+  }
+
+  // --- Corrections. ---
+  let correctionsBlock = '';
+  if (inc.corrections && d.corrections.length) {
+    correctionsBlock = card(
+      heading('To follow up on') +
+      d.corrections.map(c =>
+        `<div style="padding:10px 0;border-top:1px solid ${C.line};">` +
+          `<div style="font:700 13px ${sans};color:${C.text};padding-bottom:5px;">` +
+            (c.priority === 'must_fix' ? `<span style="font:700 10px ${sans};color:#ffffff;background:${C.bad};border-radius:5px;padding:2px 7px;margin-right:7px;">Must fix</span>` :
+             c.priority === 'should_fix' ? `<span style="font:700 10px ${sans};color:#ffffff;background:${C.warn};border-radius:5px;padding:2px 7px;margin-right:7px;">Should fix</span>` : '') +
+            e(c.section || '') +
+            (c.at ? `<span style="font:600 11px ${sans};color:${C.muted};"> &middot; heard at ${e(c.at)}</span>`
+                  : `<span style="font:600 11px ${sans};color:${C.muted};"> &middot; never came up</span>`) +
+          `</div>` +
+          `<div style="font:400 13px/1.55 ${sans};color:${C.text};padding-bottom:4px;">${e(c.issue)}</div>` +
+          `<div style="font:400 13px/1.55 ${sans};color:${C.text2};"><strong style="color:${C.text};">What to do:</strong> ${e(c.correct)}</div>` +
+        `</div>`).join('')
+    );
+  }
+
+  // --- Reviewer notes, only if ticked. ---
+  let notesBlock = '';
+  if (inc.notes && d.reviewerNotes.length) {
+    notesBlock = card(
+      heading('Reviewer notes') +
+      d.reviewerNotes.map(n => `<div style="font:400 12.5px/1.6 ${sans};color:${C.text2};padding-bottom:5px;">&bull; ${e(n)}</div>`).join('')
+    );
+  }
+
+  const listen = d.audioLink
+    ? `<div style="padding-bottom:14px;font:600 13px ${sans};"><a href="${e(d.audioLink)}" style="color:${C.accent};">Listen to the recording</a></div>`
+    : '';
+
+  return `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+    `<body style="margin:0;padding:0;background:${C.page};">` +
+    // The padding lives on the CELL, never on this table. A table at
+    // width="100%" with horizontal padding on it measures 100% + the padding
+    // and pushes the document 24px wide — measured at 377px against a 375px
+    // phone, which is a horizontal scrollbar on the one screen most of these
+    // get read on.
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.page};">` +
+    `<tr><td align="center" style="padding:22px 12px;">` +
+    `<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:640px;">` +
+      `<tr><td style="padding:0 0 16px;">` +
+        `<div style="font:700 15px ${sans};color:${C.text};letter-spacing:.02em;">DECO <span style="color:${C.accent};">Development Dashboard</span></div>` +
+        `<div style="font:600 12.5px ${sans};color:${C.muted};padding-top:3px;">${e(d.type)}${d.when ? ` &middot; ${e(d.when)}` : ''}${d.person ? ` &middot; ${e(d.person)}` : ''}</div>` +
+      `</td></tr>` +
+      card(`<div style="font:400 14px/1.65 ${sans};color:${C.text};white-space:pre-wrap;">${e(String(message || '').trim())}</div>`) +
+      card(hero, '20px') +
+      noteBlock + sectionBlock + calloutBlock + correctionsBlock + notesBlock +
+      `<tr><td style="padding:4px 4px 0;">` + listen +
+        `<div style="font:400 12px/1.6 ${sans};color:${C.muted};">` +
+          `The AI section scores above are its read of the recording. They&rsquo;re here to inform your manager&rsquo;s grade, not to replace it.<br>` +
+          `Sent from the DECO Development Dashboard.</div>` +
+      `</td></tr>` +
+    `</table></td></tr></table></body></html>`;
 }
 
 /* ---- Gmail plumbing ----
@@ -9559,20 +9857,41 @@ function encodeHeaderWord(text) {
   return /^[\x20-\x7E]*$/.test(text) ? text : `=?UTF-8?B?${base64UrlEncode(text).replace(/-/g, '+').replace(/_/g, '/')}?=`;
 }
 
-async function gmailSend({ to, cc, subject, body }) {
+/* Sends `multipart/alternative` when there is an HTML part: the plain-text half
+   first, the HTML second. Order is not cosmetic — the spec says a client shows
+   the LAST part it can render, so text first / HTML last is what makes the rich
+   version the one people see while a text-only client still gets a complete
+   message rather than markup.
+   Text-only messages keep the flat single-part shape they had. */
+async function gmailSend({ to, cc, subject, body, html }) {
   if (!(await ensureFreshToken())) throw new Error('your Google sign-in has expired. Sign in again and retry.');
+  // Long enough not to collide with anything inside the body. A boundary that
+  // appears in the content silently truncates the message at that line.
+  const boundary = '----deco=' + Math.random().toString(36).slice(2) + Date.now().toString(36);
   const headers = [
     `To: ${to}`,
     cc ? `Cc: ${cc}` : '',
     `Subject: ${encodeHeaderWord(subject)}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64'
+    html ? `Content-Type: multipart/alternative; boundary="${boundary}"`
+         : 'Content-Type: text/plain; charset="UTF-8"',
+    html ? '' : 'Content-Transfer-Encoding: base64'
   ].filter(Boolean).join('\r\n');
-  // Assembled as one string and encoded once. Encoding the headers and the body
-  // separately and joining the two base64 blobs is the obvious-looking mistake
-  // here and produces a message no client can read — the padding lands mid-stream.
-  const message = headers + '\r\n\r\n' + base64Lines(body);
+
+  // Assembled as one string and encoded once at the end. Encoding each part and
+  // joining the base64 blobs is the obvious-looking mistake here and produces a
+  // message no client can read — the padding lands mid-stream.
+  const body64 = base64Lines(body);
+  const message = html
+    ? headers + '\r\n\r\n' +
+      `--${boundary}\r\n` +
+      'Content-Type: text/plain; charset="UTF-8"\r\n' +
+      'Content-Transfer-Encoding: base64\r\n\r\n' + body64 + '\r\n' +
+      `--${boundary}\r\n` +
+      'Content-Type: text/html; charset="UTF-8"\r\n' +
+      'Content-Transfer-Encoding: base64\r\n\r\n' + base64Lines(html) + '\r\n' +
+      `--${boundary}--`
+    : headers + '\r\n\r\n' + body64;
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -9645,37 +9964,94 @@ function renderFeedbackSender(sub, result, container) {
   });
 }
 
+/* The compose panel. Three things the manager controls: the personal message,
+   which blocks of the card go in, and whether to send at all.
+
+   THE REVIEW STEP CHANGED SHAPE AND THAT IS THE THING TO UNDERSTAND HERE. When
+   the body was plain text, "edit anything before it goes" meant word-level
+   editing, and that was what made it safe to include uncalibrated AI scores. A
+   rendered card cannot be edited in a textarea, so the control moved to BLOCK
+   level — tick-boxes for the sections, the callouts, the corrections and the
+   reviewer notes — plus a live preview of the actual HTML that will be sent.
+   The manager still reads it before it goes; they just remove a block rather
+   than a sentence. Anything finer than that is what the covering message is
+   for, and that is still free text.
+
+   The preview is an IFRAME with srcdoc, not a div. The email HTML is a whole
+   document with its own body background, and dropping it into the page would
+   let the app's stylesheet reach inside it — so the preview would show
+   something nobody will ever receive, which is worse than no preview. */
 function buildFeedbackCompose(sub, result, compose, email, openBtn) {
-  const draft = composeFeedbackEmail(sub, result);
   const me = rememberedAccount || '';
+  const has = {
+    sections: !!(result && result.sections && Object.keys(result.sections).length),
+    callouts: !!(result && ((result.strong_areas || []).length || (result.weak_areas || []).length || (result.focus_areas || []).length)),
+    corrections: normalizeCorrections(result && result.corrections).length > 0,
+    notes: String((result && result.notes_for_human_reviewer) || '').trim().length > 0
+  };
+  // A tick for a block this session hasn't got would be a control that changes
+  // nothing — the same rule a missing Roster column follows.
+  const boxes = [
+    ['sections', 'Section-by-section scores', 'Every section with its score, what was talked about, what was missed and why — and the timestamps.'],
+    ['callouts', 'Strong / weak / focus areas', ''],
+    ['corrections', 'What to follow up on', ''],
+    ['notes', 'Reviewer notes', 'Written for the grader, not for them — can name a mis-filed recording or an automatic-fail condition. Off unless you want it.']
+  ].filter(([k]) => has[k]);
+
   compose.classList.remove('hidden');
   compose.innerHTML =
     `<label class="fb-label">To</label>` +
     `<div class="fb-fixed">${escapeHtml(email)}${me ? ` <span class="fb-cc">— copy to you (${escapeHtml(me)})</span>` : ''}</div>` +
     `<label class="fb-label" for="fb-subject-${sub.order}">Subject</label>` +
-    `<input type="text" class="fb-subject" id="fb-subject-${sub.order}" value="${escapeHtml(draft.subject)}">` +
-    `<label class="fb-label" for="fb-body-${sub.order}">Message — edit anything before it goes</label>` +
-    `<textarea class="fb-body" id="fb-body-${sub.order}" rows="18"></textarea>` +
+    `<input type="text" class="fb-subject" id="fb-subject-${sub.order}" value="${escapeHtml(feedbackSubject(sub))}">` +
+    `<label class="fb-label" for="fb-body-${sub.order}">Your message — the note at the top. The grade and the breakdown are added below it.</label>` +
+    `<textarea class="fb-body fb-message" id="fb-body-${sub.order}" rows="6"></textarea>` +
+    (boxes.length
+      ? `<label class="fb-label">Include the AI breakdown</label>` +
+        `<div class="fb-includes">` +
+          boxes.map(([key, label, hint]) =>
+            `<label class="fb-include"><input type="checkbox" data-inc="${key}"${FEEDBACK_DEFAULT_INCLUDE[key] ? ' checked' : ''}>` +
+              `<span><span class="fb-include-name">${escapeHtml(label)}</span>` +
+              (hint ? `<span class="fb-include-hint">${escapeHtml(hint)}</span>` : '') + `</span></label>`).join('') +
+        `</div>`
+      : '') +
+    `<label class="fb-label">What they'll get</label>` +
+    `<iframe class="fb-preview" title="Preview of the email" sandbox=""></iframe>` +
     `<div class="fb-send-row">` +
       `<button type="button" class="btn fb-send">Send it</button>` +
       `<button type="button" class="btn secondary fb-cancel">Cancel</button>` +
       `<span class="fb-status"></span>` +
     `</div>`;
-  // Set as a value rather than interpolated into the markup: the body is long,
-  // multi-line, and full of characters that would have to survive two rounds of
-  // escaping to come out right.
-  const bodyEl = compose.querySelector('.fb-body');
-  bodyEl.value = draft.body;
+  // Set as a value rather than interpolated into the markup: multi-line text
+  // full of characters that would have to survive two rounds of escaping.
+  const bodyEl = compose.querySelector('.fb-message');
+  bodyEl.value = feedbackMessageDraft(sub);
 
   const statusEl = compose.querySelector('.fb-status');
   const sendBtn = compose.querySelector('.fb-send');
+  const preview = compose.querySelector('.fb-preview');
+  const includeNow = () => {
+    const inc = Object.assign({}, FEEDBACK_DEFAULT_INCLUDE);
+    compose.querySelectorAll('[data-inc]').forEach(b => { inc[b.getAttribute('data-inc')] = b.checked; });
+    return inc;
+  };
+  // srcdoc rather than document.write: the frame is sandboxed with no
+  // allow-scripts, so there is nothing to write with, and srcdoc is the only
+  // route that survives that.
+  const repaint = () => { preview.srcdoc = feedbackEmailHtml(sub, result, bodyEl.value, includeNow()); };
+  repaint();
+  bodyEl.addEventListener('input', repaint);
+  compose.querySelectorAll('[data-inc]').forEach(b => b.addEventListener('change', repaint));
   compose.querySelector('.fb-cancel').addEventListener('click', () => compose.classList.add('hidden'));
 
   sendBtn.addEventListener('click', async () => {
     const subject = compose.querySelector('.fb-subject').value.trim();
-    const body = bodyEl.value;
+    const message = bodyEl.value;
+    const inc = includeNow();
+    const body = feedbackEmailText(sub, result, message, inc);
+    const html = feedbackEmailHtml(sub, result, message, inc);
     if (!subject) { statusEl.textContent = 'Give it a subject line first.'; statusEl.className = 'fb-status is-err'; return; }
-    if (!body.trim()) { statusEl.textContent = 'The message is empty.'; statusEl.className = 'fb-status is-err'; return; }
+    if (!message.trim()) { statusEl.textContent = 'Write a short message to go at the top.'; statusEl.className = 'fb-status is-err'; return; }
 
     sendBtn.disabled = true;
     statusEl.className = 'fb-status';
@@ -9690,7 +10066,7 @@ function buildFeedbackCompose(sub, result, compose, email, openBtn) {
         }
       }
       statusEl.textContent = 'Sending…';
-      await gmailSend({ to: email, cc: rememberedAccount || '', subject, body });
+      await gmailSend({ to: email, cc: rememberedAccount || '', subject, body, html });
 
       // Sent is sent. From here nothing may throw in a way that suggests it
       // wasn't — a failure to write the stamp is a bookkeeping problem, and
@@ -10291,7 +10667,28 @@ const SESSION_PASS_THRESHOLD = {
   // Back to 48, and for the same two reasons as the Conversion Call rather than
   // by coincidence: 60% of 80, and exactly 8 sections at the section pass mark.
   // Both rubrics happen to run to eight categories.
-  'Networking Activity': 48
+  'Networking Activity': 48,
+  /* MISSING UNTIL 2026-09-09, AND IT SILENTLY BROKE STAGE 1 CERTIFICATION.
+     V22 gave Stage 1 Interview a rubric, a `Certified - Stage 1 Interviews`
+     entry in SESSION_CERT_COLUMN, and a note in CLAUDE.md saying it certifies
+     from a passing manual grade — but no pass mark was ever added here.
+     manualGradePasses() opens with `if (!threshold || !SESSION_CERT_COLUMN[…])
+     return false`, so every Stage 1 grade, however high, answered "not a pass":
+     no Roster write, no promise in the cert preview, nothing on the catch-up
+     bar, and "No" in the Passed column. Nothing errored — the certification
+     just never happened, which is the worst shape this class of bug comes in.
+
+     Found by a Stage 1 fixture built for the feedback email, because the email
+     prints its verdict off this same map and came back blank on a grade that
+     should have read Pass.
+
+     54 for the same two reasons as Stage 2, which this rubric matches exactly:
+     60% of 90, and exactly 9 categories at the section pass mark.
+
+     THE LESSON, and it is the one this file already records twice about the
+     Recruiting Dashboard note: adding a session type to SESSION_CERT_COLUMN
+     touches more than one map. This is the third place. */
+  'Stage 1 Interview': 54
 };
 const SECTION_PASS_MARK = 6;
 
