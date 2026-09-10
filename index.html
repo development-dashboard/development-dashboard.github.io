@@ -592,7 +592,36 @@
     width: 0%;
     transition: width 0.6s ease;
   }
-  .ai-progress-elapsed { margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+  /* --text-secondary, not --text-muted: measured 4.26 on this panel in light
+     mode, under AA. Pre-existing, and fixed here because two runs can now stack
+     and a bar survives a tab switch, so it is on screen a good deal more than
+     it used to be. 7.78 light / 8.38 dark. */
+  .ai-progress-elapsed { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+  /* Two recordings can be graded on one tab at once, so each progress block
+     needs a name over it — but only then. A label on a lone run is noise, which
+     is why paintGradingPanel draws it only when there is more than one. */
+  .ai-progress-who {
+    font-size: 12px;
+    font-weight: 700;
+    /* NOT --text-muted: measured 4.09 on this panel's ground, under AA, and
+       this is the line that says which person a bar belongs to. */
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  .ai-progress-sep {
+    height: 1px;
+    background: var(--gridline);
+    margin: 14px 0;
+  }
+  /* What is running on the OTHER tabs. One line each rather than a sentence:
+     "a session" tells you nothing when two are out and one of them is the one
+     about to want looking at. */
+  .bg-grading-list {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 13px;
+  }
+  .bg-grading-list li { margin-top: 3px; }
   /* The filter row is a toolbar, so it's drawn as one: a sunken strip that the
      controls sit in, rather than loose pills floating on the card. */
   .filters {
@@ -3154,9 +3183,35 @@ const LIVE_SESSION_TABS = SESSION_TABS.filter(t => t.status === 'live');
 // Which session type the shared grading panel is currently pointed at. Set by
 // showTab(); read wherever a grade is validated, logged or sent to the AI.
 let currentSessionType = 'Training Day';
-// Session type of an AI grade that's still running, or null. Used so a grade
-// started on one tab doesn't render its result into a different tab's panel.
-let gradingInFlightFor = null;
+/* EVERY AI grading run that is in flight or has finished without being seen,
+   keyed by an id OF ITS OWN rather than by session type. That is the whole
+   mechanism behind two things Jordan asked for on 2026-09-10:
+
+   - Navigating away no longer costs anything. A run has never actually been
+     tied to the panel — it is an async function that keeps going — but it USED
+     to write straight into #aiGradingStatus and give up the moment the tab
+     moved on, so coming back showed a cleared, hidden panel over a grade that
+     was still running. A job now holds its own last status block, and
+     paintGradingPanel() decides what the tab in front should show. Nothing a
+     run does depends on which tab is on screen.
+   - Two recordings can be graded at once. Keyed by session type this would
+     still have been one-at-a-time on the same tab, and keying it by type buys
+     nothing: a job already knows its own type.
+
+   Kept until they have been SEEN on their own tab, not until they finish — a
+   grade that lands (or fails) while somebody is on another tab used to vanish
+   with only a console line to show for it. */
+const gradingJobs = new Map();
+let gradingJobSeq = 0;
+/* Session types with a submit currently mid-upload. A per-type lock rather than
+   just disabling the one shared button: the button belongs to whichever tab is
+   in front, so leaving it disabled would block a second session type on the
+   strength of the first one's upload — the exact thing this change is for. */
+const submitsInFlight = new Set();
+// Final status line from a submit that landed while a different session type
+// was on screen, so it can be shown when that tab comes back instead of being
+// written over somebody else's form.
+const pendingGradeStatus = new Map();
 
 let accessToken = null;
 let tokenClient = null;
@@ -4064,9 +4119,20 @@ function showTab(name) {
   // Switching VARIANT counts for the same reason: it is a different rubric, on
   // a different scale, with a different Recent Submissions list.
   if (previousSessionType !== currentSessionType) {
+    /* Dropped on the way OUT, never when they finish. A grade that lands while
+       another tab is in front is held so that tab can show it on the way back;
+       clearing it here — where the session type being left is still known — is
+       what stops it being cleared a moment BEFORE it is shown. Only finished
+       ones go; a run still in flight stays in the registry and keeps going. */
+    clearFinishedGradingJobs(previousSessionType);
     resetGradingPanel();
     loadRecentLog();
   }
+  // Also on the path where the session type did NOT change — coming back from
+  // the Dashboard, say — because a grade may have finished, or an upload
+  // started, while this panel was off screen.
+  paintGradingPanel();
+  syncSubmitButton();
   // After the reset, so the picker states the variant that actually survived it.
   syncVariantPicker(liveTab);
 }
@@ -4139,27 +4205,146 @@ function resetGradingPanel() {
   const statusEl = document.getElementById('grade-status');
   statusEl.textContent = '';
   statusEl.className = '';
-  const aiStatusEl = document.getElementById('aiGradingStatus');
-  aiStatusEl.classList.add('hidden');
-  aiStatusEl.innerHTML = '';
   document.getElementById('aiGradingResult').innerHTML = '';
-  renderBackgroundGradingNote();
+  /* NOT a blanket hide of #aiGradingStatus any more, and that was the bug
+     behind "it stopped when I clicked away". This runs on every session-type
+     switch, so coming BACK to a tab whose grade was still running hid the
+     progress bar over a run that was very much alive — and the next tick wrote
+     into an element that stayed hidden. What is on screen is now decided in one
+     place, from the jobs, so a panel can only be blank when nothing is running
+     on it. */
+  paintGradingPanel();
+  // A submit whose outcome landed while another tab was in front waited for
+  // this moment rather than writing over that tab's form.
+  const held = pendingGradeStatus.get(currentSessionType);
+  if (held) {
+    pendingGradeStatus.delete(currentSessionType);
+    statusEl.textContent = held.text;
+    statusEl.className = held.className;
+  }
+  syncSubmitButton();
 }
 
-// An AI grade takes ~3 minutes, so it's entirely possible to start one and
-// switch tabs before it lands. Rather than let it render into the wrong
-// panel, say plainly that it's still running and where it will show up.
-function renderBackgroundGradingNote() {
-  const el = document.getElementById('grading-background-note');
-  if (gradingInFlightFor && gradingInFlightFor !== currentSessionType) {
-    el.innerHTML = `<strong>Still grading a ${escapeHtml(gradingInFlightFor)} session in the background.</strong> ` +
-      `It'll appear under Recent ${escapeHtml(gradingInFlightFor)} submissions on that tab when it finishes — leaving this page cancels it.`;
-    el.classList.remove('hidden');
-  } else {
-    el.classList.add('hidden');
-    el.innerHTML = '';
-  }
+/* ---------------------- AI grading jobs ----------------------
+   One place that decides what the grading panel shows, so nothing a run does
+   has to know which tab is on screen. See the note on gradingJobs. */
+
+function gradingJobsFor(sessionType) {
+  return Array.from(gradingJobs.values()).filter(j => j.sessionType === sessionType);
 }
+function runningGradingJobs() {
+  return Array.from(gradingJobs.values()).filter(j => !j.done);
+}
+// Finished jobs are held until their own tab has had a chance to show them, so
+// they're dropped on the way OUT of that tab rather than when they finish.
+function clearFinishedGradingJobs(sessionType) {
+  gradingJobs.forEach((job, id) => {
+    if (job.done && job.sessionType === sessionType) gradingJobs.delete(id);
+  });
+}
+
+// Disabled only while THIS session type has an upload going. The button is
+// shared between the live tabs, so keying it to the tab in front is what lets a
+// second recording be submitted on another tab while the first is still
+// uploading.
+function syncSubmitButton() {
+  const btn = document.getElementById('grade-submit-btn');
+  if (btn) btn.disabled = submitsInFlight.has(currentSessionType);
+}
+
+function paintGradingPanel() {
+  const statusEl = document.getElementById('aiGradingStatus');
+  const noteEl = document.getElementById('grading-background-note');
+
+  // Everything belonging to the session type in front: running, or finished and
+  // not yet seen. More than one is possible — nothing stops a second recording
+  // being submitted while the first is still being graded.
+  const mine = gradingJobsFor(currentSessionType);
+  if (statusEl) {
+    if (!mine.length) {
+      statusEl.classList.add('hidden');
+      statusEl.innerHTML = '';
+    } else {
+      statusEl.classList.remove('hidden');
+      // The name is only drawn when there is more than one, for the same reason
+      // a single evidence clip doesn't get a quote line: there is nothing to
+      // tell apart, and a label on every run is noise.
+      statusEl.innerHTML = mine.map(job =>
+        (mine.length > 1 && job.subject ? `<div class="ai-progress-who">${escapeHtml(job.subject)}</div>` : '') + job.html
+      ).join('<div class="ai-progress-sep"></div>');
+    }
+    /* The result card is rendered ONCE, here, and deliberately outside the
+       repaint above: it carries an in-page audio player, and re-writing it on
+       every one-second tick of some other tab's progress bar would restart
+       playback under somebody checking an evidence timestamp. */
+    mine.forEach(job => {
+      if (!job.pendingResult) return;
+      const held = job.pendingResult;
+      job.pendingResult = null;
+      renderAiGradingResult(held.result, undefined, held.audioFileId, held.transcriptUrl);
+    });
+  }
+
+  if (!noteEl) return;
+  /* An upload is a job too as far as this note is concerned — it is minutes of
+     waiting on a big recording, and it is the stretch where clicking away used
+     to quietly re-file the session under the wrong tab. A manual-only grade has
+     no AI run behind it, so without this its outcome would be held for a tab
+     with nothing on screen pointing at it. */
+  const uploads = Array.from(submitsInFlight)
+    .filter(t => t !== currentSessionType)
+    .map(t => ({ sessionType: t, subject: '', upload: true }));
+  const held = Array.from(pendingGradeStatus.keys())
+    .filter(t => t !== currentSessionType && !gradingJobsFor(t).length)
+    .map(t => ({ sessionType: t, subject: '', done: true, outcome: 'ok' }));
+  const others = Array.from(gradingJobs.values())
+    .filter(j => j.sessionType !== currentSessionType)
+    .concat(uploads, held);
+  if (!others.length) {
+    noteEl.classList.add('hidden');
+    noteEl.innerHTML = '';
+    return;
+  }
+  const running = others.filter(j => !j.done);
+  const finished = others.filter(j => j.done);
+  const line = job => `<li>${escapeHtml(job.sessionType)}`
+    + (job.subject ? ` — ${escapeHtml(job.subject)}` : '')
+    + ' · '
+    + (job.done
+        ? (job.outcome === 'error' ? 'stopped before it finished' : 'finished')
+        : job.upload
+          ? 'still uploading'
+          : `running ${escapeHtml(formatElapsed((Date.now() - job.startedAt) / 1000))}`)
+    + '</li>';
+  const parts = [];
+  if (running.length) {
+    parts.push(`<strong>${running.length === 1 ? 'A session you started on another tab is still going.' : running.length + ' sessions you started on other tabs are still going.'}</strong> `
+      + 'Moving around the site is fine and does not interrupt it — only closing or reloading this page does.');
+  }
+  if (finished.length) {
+    // "Finished" would be a poor word for a run that failed, and a failure is
+    // the one somebody most needs to go and look at.
+    const anyFailed = finished.some(j => j.outcome === 'error');
+    parts.push(`<strong>${finished.length === 1
+        ? (anyFailed ? 'A grade you started elsewhere stopped before it finished.' : 'A grade you started elsewhere has finished.')
+        : (anyFailed ? finished.length + ' grades you started elsewhere have come back — one or more did not finish.'
+                     : finished.length + ' grades you started elsewhere have finished.')}</strong> `
+      + 'Open that tab to see it.');
+  }
+  parts.push('<ul class="bg-grading-list">' + running.concat(finished).map(line).join('') + '</ul>');
+  noteEl.innerHTML = parts.join(' ');
+  noteEl.classList.remove('hidden');
+}
+
+/* Closing or reloading the page is the ONE thing that really does cancel a run
+   — it is browser-side JavaScript, and a long recording can be several dollars
+   and several minutes in by the time somebody reaches for the reload. Only
+   armed while something is actually in flight, so it never nags. */
+window.addEventListener('beforeunload', (e) => {
+  if (!runningGradingJobs().length && !submitsInFlight.size) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /* ---------------------- Sheets helpers ---------------------- */
 async function sheetsGet(spreadsheetId, range) {
@@ -6941,7 +7126,6 @@ document.getElementById('g-medium').addEventListener('change', onMediumChoiceCha
 document.getElementById('grading-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById('grade-status');
-  const btn = document.getElementById('grade-submit-btn');
   // Audio is optional. It's what the AI grades, so without it there's no AI
   // result — but a session someone sat through and scored on paper is still
   // worth recording, and (since a passing manual grade certifies) is a
@@ -6975,6 +7159,23 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
   // was pressed. The picker's own `required` catches an empty selection; this
   // catches a "not listed" name that's only whitespace.
   const graderName = graderNameValue();
+  /* Read HERE, with the grader name, and not after the Drive upload — which is
+     where three of them used to be read. The comment down there claimed they
+     were "captured once rather than read again later", and they were: read once,
+     but after several minutes of awaiting an upload, off a form the tab switch
+     had since re-pointed at a different session type. On a long recording that
+     filed a Networking Activity as a Reference Check, graded it against the
+     wrong rubric, and stamped it with whichever name was in the box by then. */
+  const sessionType = sessionTypeForValidation;
+  const traineeName = document.getElementById('g-trainee').value;
+  const manualFeedback = document.getElementById('g-feedback').value;
+  // Same reason: audioPlan is global and follows whatever file is chosen next.
+  const plan = audioPlan;
+  // True only while the panel is still pointed at the session type this submit
+  // was started under. Everything after an await that writes to the shared form
+  // or its status line has to ask, or one submission's outcome lands on top of
+  // the next one's half-typed form.
+  const onOwnPanel = () => currentSessionType === sessionType;
   if (!document.getElementById('g-grader').disabled && !graderName) {
     statusEl.textContent = 'Pick who graded this session, or type their name if they are not on the list.';
     statusEl.className = 'err';
@@ -7009,13 +7210,18 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
   }
   if (!(await ensureFreshToken())) return;
 
-  btn.disabled = true;
+  submitsInFlight.add(sessionType);
+  syncSubmitButton();
   statusEl.className = '';
   statusEl.textContent = audioFile ? 'Uploading audio…' : 'Saving grade…';
-  const aiStatusEl = document.getElementById('aiGradingStatus');
+  // Clears out the LAST grade on this tab, not whatever is running now. Blanket
+  // -hiding the panel here would have wiped the progress bar of a run still
+  // going — which is exactly the second recording case: submit one, submit
+  // another, and the first one's bar disappears.
+  clearFinishedGradingJobs(sessionType);
   const aiResultEl = document.getElementById('aiGradingResult');
-  if (aiStatusEl) { aiStatusEl.classList.add('hidden'); aiStatusEl.textContent = ''; }
   if (aiResultEl) aiResultEl.innerHTML = '';
+  paintGradingPanel();
   try {
     // No file, no Drive round trip — the row just carries a blank audio link.
     // fetchSubmissions() already keeps link-less rows as their own submission
@@ -7037,16 +7243,9 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       audioLink = fileInfo.webViewLink || '';
     }
 
-    statusEl.textContent = 'Saving grade…';
-    // Captured once here rather than read again later: the tab can be switched
-    // while the ~3-minute AI grade runs, and this submission must stay stamped
-    // with the session type it was actually started under.
-    const sessionType = currentSessionType;
-    // Captured here for the same reason as sessionType: the form is reset a few
-    // lines below, while the grading run this describes is still minutes away
-    // from starting.
-    const plan = audioPlan;
-    const traineeName = document.getElementById('g-trainee').value;
+    // sessionType, traineeName, manualFeedback and plan were all read before the
+    // upload started — see the note where they are captured.
+    if (onOwnPanel()) statusEl.textContent = 'Saving grade…';
     const gradeMax = SESSION_MAX_POSSIBLE[sessionType] || 110;
     const manualGradeText = rawGradeVal !== '' ? `${rawGradeVal}/${gradeMax}` : '';
     const row = [
@@ -7055,7 +7254,7 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       sessionType,
       graderName,
       manualGradeText,
-      document.getElementById('g-feedback').value,
+      manualFeedback,
       audioLink
     ];
     // Pad out to W and record the sections tick there — blank when there's no
@@ -7095,7 +7294,7 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       // tick by hand rather than implying the whole thing failed.
       const certBoard = certBoardLabel(sessionType);
       const doCertify = async () => {
-        statusEl.textContent = `Updating the ${certBoard} tab…`;
+        if (onOwnPanel()) statusEl.textContent = `Updating the ${certBoard} tab…`;
         try {
           certNote = ' ' + await certifyOnRoster(traineeName, sessionType);
           await loadRoster();
@@ -7119,7 +7318,7 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
            have logged a visit. This is the highest-stakes write in the app; an
            extra read of the Grading Log is a cheap price for not signing
            somebody off on a number that was out of date. */
-        statusEl.textContent = 'Checking how many passing recordings are on file…';
+        if (onOwnPanel()) statusEl.textContent = 'Checking how many passing recordings are on file…';
         let passCount = null;
         let countErr = null;
         try {
@@ -7150,29 +7349,37 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
 
     // Says plainly that no AI grade is coming, rather than leaving someone
     // waiting on a result that was never going to arrive.
-    statusEl.textContent = (audioFile ? 'Submitted — thanks!' : 'Grade saved — no recording, so there is no AI grade for this one.') + certNote;
-    statusEl.className = 'ok';
-    document.getElementById('grading-form').reset();
-    // form.reset() restores values/checked state but not the disabled flag
-    // the "did not attend" checkbox sets on Grade/Feedback — clear that too
-    // so a re-enabled, blank manual-grade section is ready for the next entry.
-    document.getElementById('g-grade').disabled = false;
-    document.getElementById('g-feedback').disabled = false;
-    document.getElementById('g-grader').disabled = false;
-    document.getElementById('g-all-sections-pass').disabled = false;
-    // Same as resetGradingPanel: reset() clears the picker but not the box it
-    // revealed, so a typed name can't be left over the next submission.
-    syncGraderOtherField(false);
-    // reset() empties the file input without firing 'change', so the cost line
-    // for the recording just submitted would otherwise sit over an empty form.
-    audioPlan = null;
-    describeChosenRecording();
-    renderCertPreview();
-    // The form is empty again, so an override granted for the person who was in
-    // it must not still be standing for whoever is picked next.
-    prereqOverride = null;
-    prereqBlockedSubmit = false;
-    renderPrereqGate();
+    reportSubmitOutcome(sessionType, onOwnPanel(),
+      (audioFile ? 'Submitted — thanks!' : 'Grade saved — no recording, so there is no AI grade for this one.') + certNote,
+      'ok');
+    /* Clearing the form is only right if it is still THIS submission's form.
+       Switch tabs during a long upload and the panel has been re-pointed and
+       reset already, quite possibly with the next session half typed into it —
+       wiping that on the strength of an upload that finished elsewhere is the
+       "they affect each other" Jordan is asking not to happen. */
+    if (onOwnPanel()) {
+      document.getElementById('grading-form').reset();
+      // form.reset() restores values/checked state but not the disabled flag
+      // the "did not attend" checkbox sets on Grade/Feedback — clear that too
+      // so a re-enabled, blank manual-grade section is ready for the next entry.
+      document.getElementById('g-grade').disabled = false;
+      document.getElementById('g-feedback').disabled = false;
+      document.getElementById('g-grader').disabled = false;
+      document.getElementById('g-all-sections-pass').disabled = false;
+      // Same as resetGradingPanel: reset() clears the picker but not the box it
+      // revealed, so a typed name can't be left over the next submission.
+      syncGraderOtherField(false);
+      // reset() empties the file input without firing 'change', so the cost line
+      // for the recording just submitted would otherwise sit over an empty form.
+      audioPlan = null;
+      describeChosenRecording();
+      renderCertPreview();
+      // The form is empty again, so an override granted for the person who was in
+      // it must not still be standing for whoever is picked next.
+      prereqOverride = null;
+      prereqBlockedSubmit = false;
+      renderPrereqGate();
+    }
     loadRecentLog();
 
     // Kick off AI grading in the background — this form only has one name field
@@ -7198,12 +7405,32 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       });
     }
   } catch (err) {
-    statusEl.textContent = 'Something went wrong: ' + err.message;
-    statusEl.className = 'err';
+    reportSubmitOutcome(sessionType, onOwnPanel(), 'Something went wrong: ' + err.message, 'err');
   } finally {
-    btn.disabled = false;
+    submitsInFlight.delete(sessionType);
+    syncSubmitButton();
+    // Nothing is running on this tab any more, so if the note was only there to
+    // say an upload was out, it has to come down.
+    paintGradingPanel();
   }
 });
+
+/* Where a submit's final word goes. On its own panel it goes on screen as it
+   always did; from another tab it is HELD for that tab rather than dropped —
+   "the grade saved but the Roster write failed, go tick it by hand" is exactly
+   the message somebody must not miss because they clicked away — and never
+   written into the panel in front, which by then belongs to a different
+   session type. resetGradingPanel() shows it on the way back. */
+function reportSubmitOutcome(sessionType, visible, text, className) {
+  if (visible) {
+    const statusEl = document.getElementById('grade-status');
+    statusEl.textContent = text;
+    statusEl.className = className;
+    return;
+  }
+  pendingGradeStatus.set(sessionType, { text, className });
+  paintGradingPanel();
+}
 
 async function driveCreateFileMetadata(name, parentId) {
   const res = await fetch('https://www.googleapis.com/drive/v3/files', {
@@ -7815,7 +8042,6 @@ function sizeLooksUnsettled(prepared, audioBytes) {
 }
 
 async function gradeSessionWithAI({ sessionType, traineeName, regionalManagerName, graderName, date, audioFileId, audioBytes, medium, audioSeconds }) {
-  const statusEl = document.getElementById('aiGradingStatus');
   let progressTimer = null;
   const startedAt = Date.now();
   // Not const: a backend older than V16 has no transcription step, and the run
@@ -7853,20 +8079,41 @@ async function gradeSessionWithAI({ sessionType, traineeName, regionalManagerNam
     renderProgress();
   }
 
-  // The grading panel is shared between the live session-type tabs, so a grade
-  // started on one tab must not paint its progress or its result onto another.
-  // When the tab has moved on, the run keeps going and lands in that tab's
-  // Recent Submissions instead — nothing is lost, it just isn't shown here.
-  gradingInFlightFor = sessionType;
-  renderBackgroundGradingNote();
-  const onOwnTab = () => currentSessionType === sessionType;
-  function finish() {
-    gradingInFlightFor = null;
-    renderBackgroundGradingNote();
+  /* This run's entry in the registry. Nothing below writes to the DOM directly
+     any more: it updates job.html and lets paintGradingPanel() decide whether
+     the tab in front is the one that should be looking at it. That is what
+     makes navigating away free — the run never notices — and what lets a second
+     recording be graded alongside this one without the two fighting over a
+     single status element. */
+  const job = {
+    id: 'grade-' + (++gradingJobSeq),
+    sessionType,
+    subject: traineeName || '',
+    startedAt,
+    html: '',
+    done: false,
+    outcome: '',
+    // The finished result card, held rather than drawn, so paintGradingPanel()
+    // can render it exactly once — on this session type's own tab, whenever
+    // that is. Off-tab results used to be dropped with only a Recent
+    // Submissions refresh behind them.
+    pendingResult: null
+  };
+  gradingJobs.set(job.id, job);
+  paintGradingPanel();
+  function finish(outcome, html) {
+    job.done = true;
+    job.outcome = outcome;
+    job.html = html;
+    paintGradingPanel();
   }
+  const noticeHtml = text => `<div class="ai-progress-text">${escapeHtml(text)}</div>`;
 
   function renderProgress() {
-    if (!statusEl || !onOwnTab()) return;
+    // No "am I on screen?" test any more, and its absence is the fix. Bailing
+    // out here left job.html frozen at whatever the tab switch caught, so
+    // coming back showed a stale bar — or, once resetGradingPanel had hidden
+    // the panel, nothing at all over a run that was still going.
     const elapsed = (Date.now() - startedAt) / 1000;
     const inPhase = (Date.now() - phaseStartedAt) / 1000;
 
@@ -7936,21 +8183,19 @@ async function gradeSessionWithAI({ sessionType, traineeName, regionalManagerNam
     pct = Math.max(pct, progressFloor);
     progressFloor = pct;
 
-    statusEl.innerHTML =
+    job.html =
       `<div class="ai-progress-text">${escapeHtml(label)}</div>` +
       `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
       `<div class="ai-progress-elapsed">Elapsed: ${formatElapsed(elapsed)}</div>`;
+    paintGradingPanel();
   }
 
   function stopProgress() {
     if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
   }
 
-  if (statusEl) {
-    statusEl.classList.remove('hidden');
-    renderProgress();
-    progressTimer = setInterval(renderProgress, 1000);
-  }
+  renderProgress();
+  progressTimer = setInterval(renderProgress, 1000);
 
   // One place that talks to the Apps Script endpoint, so every phase gets the
   // same non-JSON handling. Reads the body as TEXT first and parses it here:
@@ -8249,10 +8494,9 @@ async function gradeSessionWithAI({ sessionType, traineeName, regionalManagerNam
           audioMimeType
         }));
     stopProgress();
-    finish();
 
     if (!result.ok) {
-      if (statusEl && onOwnTab()) statusEl.innerHTML = escapeHtml('AI grading failed: ' + result.error);
+      finish('error', noticeHtml('AI grading failed: ' + result.error));
       console.error('AI grading error:', result.error);
       return null;
     }
@@ -8271,25 +8515,19 @@ async function gradeSessionWithAI({ sessionType, traineeName, regionalManagerNam
     // the results card rendered below, so it cannot disturb what just landed.
     loadRecentLog();
 
-    if (!onOwnTab()) {
-      // Landed while a different session type was on screen — the refresh above
-      // is what puts it where the person will actually find it.
-      return result;
-    }
-
-    if (statusEl) {
-      const totalElapsed = (Date.now() - startedAt) / 1000;
-      statusEl.innerHTML =
-        `<div class="ai-progress-text">AI grading complete — see result below.</div>` +
-        `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:100%"></div></div>` +
-        `<div class="ai-progress-elapsed">Took ${formatElapsed(totalElapsed)}.</div>`;
-    }
-    renderAiGradingResult(result, undefined, audioFileId, transcriptUrl);
+    // Held, not drawn. If this session type is what's on screen the card appears
+    // immediately, exactly as before; if the manager has moved on it waits on
+    // their tab instead of being thrown away with a console line for company.
+    job.pendingResult = { result, audioFileId, transcriptUrl };
+    const totalElapsed = (Date.now() - startedAt) / 1000;
+    finish('ok',
+      `<div class="ai-progress-text">AI grading complete — see result below.</div>` +
+      `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:100%"></div></div>` +
+      `<div class="ai-progress-elapsed">Took ${formatElapsed(totalElapsed)}.</div>`);
     return result;
   } catch (err) {
     stopProgress();
-    finish();
-    if (statusEl && onOwnTab()) statusEl.innerHTML = escapeHtml('AI grading request failed: ' + err.message);
+    finish('error', noticeHtml('AI grading request failed: ' + err.message));
     console.error(err);
     return null;
   }
@@ -9756,14 +9994,67 @@ const FB_MAIL = {
   good: '#0f8a3c', warn: '#a16207', bad: '#cf3a3a'
 };
 
-// Which blocks of the card go in. Sections, the callouts and the corrections
-// are the feedback; REVIEWER NOTES ARE DELIBERATELY OFF BY DEFAULT — they are
-// addressed to the grader, not to the person graded, and in practice carry
-// things like "the interviewer introduced himself as Ronel, but the session
-// context lists Jordan Evans" (a mis-filed form) and AUTOMATIC FAIL CONDITION
-// lines. Those belong in a conversation between managers. There is a tick to
-// include them for whoever decides otherwise on a given session.
-const FEEDBACK_DEFAULT_INCLUDE = { sections: true, callouts: true, corrections: true, notes: false };
+// Which blocks of the card go in. Sections, the callouts, the corrections and
+// the tone read are the feedback; REVIEWER NOTES ARE DELIBERATELY OFF BY
+// DEFAULT — they are addressed to the grader, not to the person graded, and in
+// practice carry things like "the interviewer introduced himself as Ronel, but
+// the session context lists Jordan Evans" (a mis-filed form) and AUTOMATIC FAIL
+// CONDITION lines. Those belong in a conversation between managers. There is a
+// tick to include them for whoever decides otherwise on a given session.
+//
+// TONE IS ON BY DEFAULT, and that is the one place it differs from the reviewer
+// notes it otherwise resembles (advisory, uncalibrated, not part of any score).
+// It is written ABOUT the person receiving this and is coaching material for
+// them — Jordan asked for it in the email on 2026-09-10 — where a reviewer note
+// is a manager talking to a manager. Still a tick, so it can be dropped on a
+// session where the delivery read would land badly.
+const FEEDBACK_DEFAULT_INCLUDE = { sections: true, callouts: true, corrections: true, tone: true, notes: false };
+
+/* The tone & energy read, prepared for the email. The same data toneBlock()
+   draws on the result card, under the same two rules:
+
+   - A row graded before V23 has NO tone key at all, so this returns null and
+     the email says NOTHING — not an empty block. Nobody asked the model, so
+     there is no answer to report.
+   - A recording that could not be judged on delivery says so IN WORDS. An
+     absent delivery note is MISSING EVIDENCE, never a low score (Code.gs is
+     explicit, and a transcript-graded session genuinely cannot be heard), so
+     four blank rows must never reach somebody as "you were flat".
+
+   `anyScored` is DERIVED here rather than read off tone.assessable — the same
+   rule reconcileToneAndEnergy and toneBlock already follow, so a run that
+   claimed "yes" over four nulls cannot make this email promise a read it hasn't
+   got.
+
+   IT IS ADVISORY AND IT CANNOT MOVE A SCORE. Nothing here is in total_score,
+   the verdict or any certification. This email is the first place an
+   uncalibrated 0–5 delivery read reaches the person it is ABOUT rather than
+   somebody grading them, so BOTH renderings have to carry that in words — not
+   just in where the block sits. */
+function feedbackTone(result) {
+  const tone = result && result.tone_and_energy;
+  if (!tone || typeof tone !== 'object' || Array.isArray(tone)) return null;
+
+  let anyScored = false;
+  const dims = TONE_DIMENSIONS.map(dim => {
+    const raw = tone[dim];
+    const has = typeof raw === 'number' && isFinite(raw) && raw >= 0 && raw <= TONE_MAX;
+    const score = has ? Math.round(raw) : null;
+    if (has) anyScored = true;
+    return {
+      name: dim.charAt(0).toUpperCase() + dim.slice(1),
+      score,
+      words: has ? (TONE_WORDS[score] || '') : ''
+    };
+  });
+
+  const clips = (Array.isArray(tone.evidence_clips) ? tone.evidence_clips : []).map(c => {
+    const secs = parseClipSeconds(c && c.at);
+    return secs === null ? null : { at: formatClipTime(secs), quote: String((c && c.quote) || '').trim() };
+  }).filter(Boolean);
+
+  return { anyScored, dims, summary: String(tone.summary || '').trim(), clips };
+}
 
 /* Everything the email might say, worked out once. Both renderers read this and
    neither derives anything of its own. */
@@ -9829,6 +10120,7 @@ function feedbackData(sub, result) {
     strong: list(result && result.strong_areas),
     weak: list(result && result.weak_areas),
     focus: list(result && result.focus_areas),
+    tone: feedbackTone(result),
     /* The section name is put through sectionLabel() HERE, once, rather than in
        each renderer — the same treatment the card gives it (correctionsBlock).
        The model fills `section` with the raw KEY, so without this the email
@@ -9920,6 +10212,32 @@ function feedbackEmailText(sub, result, message, include) {
       lines.push(`    What to do: ${c.correct}`);
       if (c.at) lines.push(`    Heard at ${c.at}`);
     });
+    lines.push('');
+  }
+
+  // Tone sits where the card puts it: after the corrections, before the
+  // reviewer notes. The heading says it is not part of the score before a
+  // single number is read, because a 0-5 row under a card full of x/10 section
+  // scores is exactly the thing that gets mistaken for one more graded line.
+  if (inc.tone && d.tone) {
+    lines.push('TONE & ENERGY — EXTRA FEEDBACK, NOT PART OF THE SCORE');
+    if (d.tone.anyScored) {
+      lines.push('  How you came across, on its own 0-5 scale. It is not a section, it is');
+      lines.push('  not added to any total, and it cannot change the grade above.');
+      lines.push('');
+      d.tone.dims.forEach(t => lines.push(t.score === null
+        ? `  ${t.name} — not enough in the recording to tell`
+        : `  ${t.name} — ${t.score} of ${TONE_MAX} (${t.words})`));
+    } else {
+      lines.push('  There was not enough in this recording to judge delivery. That is a');
+      lines.push('  gap in the evidence, not a low score — nothing here counts against');
+      lines.push('  your grade.');
+    }
+    if (d.tone.summary) { lines.push(''); lines.push(`  ${d.tone.summary}`); }
+    d.tone.clips.forEach(c => lines.push(`  Listen at ${c.at}${c.quote ? ` — "${c.quote}"` : ''}`));
+    lines.push('');
+    lines.push('  Delivery is the most subjective thing the AI reads here, and none of it');
+    lines.push('  is calibrated yet. Treat it as a prompt for a conversation.');
     lines.push('');
   }
 
@@ -10065,6 +10383,84 @@ function feedbackEmailHtml(sub, result, message, include) {
     );
   }
 
+  // --- Tone & energy. Advisory, and it has to READ as advisory: its own
+  //     0-5 scale sits directly under a card full of x/10 section scores, so
+  //     the heading carries a "doesn't affect the score" chip, the intro says
+  //     it again in a sentence, and every row prints "4 of 5" in words beside
+  //     the blocks rather than leaving a bare figure to be read as a mark. ---
+  let toneMailBlock = '';
+  if (inc.tone && d.tone) {
+    const t = d.tone;
+    /* Five TABLE CELLS with a background, never the card's CSS dots: Outlook
+       renders through Word, which drops border-radius, so round dots would
+       arrive as squares in the client most of these get read in. A cell with a
+       bgcolor is the one thing that renders everywhere.
+
+       The blocks are decoration and the words beside them are what carry the
+       reading — which is deliberate, because it is the answer to the defect the
+       card hit: an empty dot at --gridline measured 1.12:1 and made "4 on" and
+       "4 of 5" look identical. Here an empty block that renders faintly costs
+       nothing, since the label already says the number. */
+    const dotRow = score => {
+      /* A dimension the AI could not read draws NO BLOCKS AT ALL, just a dash.
+         This is a deliberate divergence from the card, which draws five empty
+         dots there — and the reason is the distinction this whole project
+         protects: five empty blocks are visually identical to a scored 0, so an
+         unread row on the same scale as its neighbours reads as "you got zero".
+         On the card that ambiguity is carried by a manager who has the rest of
+         the session in front of them; this email goes to the PERSON, where
+         "there wasn't enough to hear" turning into "you were flat" is the exact
+         failure the sections block already spells out ("never came up — counts
+         as 0"). The row itself still appears, so "the AI skipped it" is not the
+         reading either — only the scale is left blank. */
+      if (score === null) {
+        return `<span style="font:400 13px ${sans};color:${C.muted};">&mdash;</span>`;
+      }
+      let cells = '';
+      for (let i = 1; i <= TONE_MAX; i++) {
+        const on = i <= score;
+        cells += `<td width="16" height="10" style="width:16px;height:10px;font-size:0;line-height:0;` +
+          `background:${on ? C.accent : C.sunken};border:1px solid ${on ? C.accent : C.muted};">&nbsp;</td>` +
+          (i < TONE_MAX ? `<td width="4" style="width:4px;font-size:0;line-height:0;">&nbsp;</td>` : '');
+      }
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>`;
+    };
+    const toneRows = t.dims.map(dim =>
+      `<tr>` +
+        `<td valign="middle" style="padding:5px 12px 5px 0;font:600 13px ${sans};color:${C.text};white-space:nowrap;">${e(dim.name)}</td>` +
+        `<td valign="middle" style="padding:5px 12px 5px 0;">${dotRow(dim.score)}</td>` +
+        `<td valign="middle" style="padding:5px 0;font:400 12.5px ${sans};color:${dim.score === null ? C.muted : C.text2};">` +
+          (dim.score === null ? 'not enough to tell' : `${e(String(dim.score))} of ${TONE_MAX} &mdash; ${e(dim.words)}`) +
+        `</td>` +
+      `</tr>`).join('');
+    // The "no" case is the one that matters most: on a transcript-graded
+    // session the AI genuinely cannot hear the recording, and a reader must not
+    // take four empty rows as "they were flat".
+    const toneIntro = t.anyScored
+      ? 'How you came across — tone, energy, passion and enthusiasm. This is extra feedback to talk through, on its own 0–5 scale. It isn’t a section, it isn’t added to any total, and it can’t change the grade above.'
+      : 'There wasn’t enough in this recording to judge delivery. That’s a gap in the evidence, not a low score — nothing here counts against your grade.';
+    const toneClips = t.clips.map(c =>
+      `<div style="padding-top:6px;">` +
+        `<span style="display:inline-block;font:700 12px ${sans};color:${C.accent};background:${C.sunken};border:1px solid ${C.border};border-radius:6px;padding:2px 7px;">${e(c.at)}</span>` +
+        (c.quote ? `<span style="font:italic 400 12px/1.45 ${sans};color:${C.text2};"> &ldquo;${e(shortQuote(c.quote, 12))}&rdquo;</span>` : '') +
+      `</div>`).join('');
+    toneMailBlock = card(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>` +
+        `<td valign="middle" style="font:700 11px ${sans};letter-spacing:.09em;text-transform:uppercase;color:${C.muted};">Tone &amp; energy</td>` +
+        `<td align="right" valign="middle"><span style="display:inline-block;font:700 10px ${sans};letter-spacing:.04em;` +
+          `text-transform:uppercase;color:${C.text2};background:${C.sunken};border:1px solid ${C.border};border-radius:5px;padding:3px 8px;">` +
+          `Doesn&rsquo;t affect the score</span></td>` +
+      `</tr></table>` +
+      `<div style="font:400 12.5px/1.6 ${sans};color:${C.text2};padding:8px 0 12px;">${e(toneIntro)}</div>` +
+      (t.anyScored ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0">${toneRows}</table>` : '') +
+      (t.summary ? `<div style="font:400 13px/1.6 ${sans};color:${C.text};padding-top:12px;">${e(t.summary)}</div>` : '') +
+      toneClips +
+      `<div style="border-top:1px solid ${C.line};margin-top:14px;padding-top:10px;font:400 11.5px/1.55 ${sans};color:${C.muted};">` +
+        `Delivery is the most subjective thing the AI reads here, and none of it is calibrated yet &mdash; ` +
+        `treat it as a prompt for a conversation, not a measurement.</div>`
+    );
+  }
+
   // --- Reviewer notes, only if ticked. ---
   let notesBlock = '';
   if (inc.notes && d.reviewerNotes.length) {
@@ -10095,7 +10491,10 @@ function feedbackEmailHtml(sub, result, message, include) {
       `</td></tr>` +
       card(`<div style="font:400 14px/1.65 ${sans};color:${C.text};white-space:pre-wrap;">${e(String(message || '').trim())}</div>`) +
       card(hero, '20px') +
-      noteBlock + sectionBlock + calloutBlock + correctionsBlock + notesBlock +
+      // Tone goes after the corrections and before the reviewer notes — the
+      // same order the result card renders, so the two cannot tell a different
+      // story about the same session.
+      noteBlock + sectionBlock + calloutBlock + correctionsBlock + toneMailBlock + notesBlock +
       `<tr><td style="padding:4px 4px 0;">` + listen +
         `<div style="font:400 12px/1.6 ${sans};color:${C.muted};">` +
           `The AI section scores above are its read of the recording. They&rsquo;re here to inform your manager&rsquo;s grade, not to replace it.<br>` +
@@ -10261,6 +10660,11 @@ function buildFeedbackCompose(sub, result, compose, email, openBtn) {
     sections: !!(result && result.sections && Object.keys(result.sections).length),
     callouts: !!(result && ((result.strong_areas || []).length || (result.weak_areas || []).length || (result.focus_areas || []).length)),
     corrections: normalizeCorrections(result && result.corrections).length > 0,
+    // Gated on there being a tone read AT ALL, not on it having scored
+    // anything: a session the AI couldn't judge on delivery still has something
+    // to say ("there wasn't enough in the recording"), and that sentence is
+    // worth sending — it is what stops a blank being read as a bad mark.
+    tone: !!feedbackTone(result),
     notes: String((result && result.notes_for_human_reviewer) || '').trim().length > 0
   };
   // A tick for a block this session hasn't got would be a control that changes
@@ -10269,6 +10673,7 @@ function buildFeedbackCompose(sub, result, compose, email, openBtn) {
     ['sections', 'Section-by-section scores', 'Every section with its score, what was talked about, what was missed and why — and the timestamps.'],
     ['callouts', 'Strong / weak / focus areas', ''],
     ['corrections', 'What to follow up on', ''],
+    ['tone', 'Tone and energy read', 'Delivery on its own 0–5 scale — not part of the score, and not calibrated. Coaching material for them.'],
     ['notes', 'Reviewer notes', 'Written for the grader, not for them — can name a mis-filed recording or an automatic-fail condition. Off unless you want it.']
   ].filter(([k]) => has[k]);
 
