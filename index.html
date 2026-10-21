@@ -1185,9 +1185,16 @@
     .alert-bar.is-new { animation: alert-bar-in 280ms var(--ease) both; }
     .alert-bar.is-new::after { animation: alert-bar-pulse 1.15s ease-out 2; }
   }
+  /* TRANSFORM ONLY — the opacity this used to animate from 0 is gone, and that
+     is the same lesson the add-person form learned the hard way: anything an
+     animation controls is whatever frame that animation is on, so a browser
+     that doesn't advance animations leaves the element at its FROM state. For a
+     slide that costs eight pixels; for opacity it costs the whole notice, and
+     every bar using this keyframe is one whose entire job is to not be missed —
+     including the one that explains why a Submit did nothing. */
   @keyframes alert-bar-in {
-    from { opacity: 0; transform: translateY(-8px); }
-    to   { opacity: 1; transform: none; }
+    from { transform: translateY(-8px); }
+    to   { transform: none; }
   }
   @keyframes alert-bar-pulse {
     0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 55%, transparent); }
@@ -1246,6 +1253,32 @@
     box-shadow: var(--shadow-sm);
     background: color-mix(in srgb, var(--tone) 8%, var(--surface-1));
   }
+  /* The grading form's lock gate (renderLockGate) is on screen for EVERY
+     submission rather than only when something has gone wrong, so its resting
+     state is turned down to the same weight .acknowledged uses: a bar that is a
+     step in the job, not a complaint about it. It goes to full weight — and
+     only then pulses — when a Submit has actually been stopped. A bar that
+     shouts on every tab switch is wallpaper by the second one. */
+  .alert-bar.quiet {
+    box-shadow: var(--shadow-sm);
+    background: color-mix(in srgb, var(--tone) 8%, var(--surface-1));
+  }
+  /* The locked figure is printed in the bar at full contrast rather than left
+     to be read out of the input, which is frozen on lock and therefore dimmed
+     by the browser. The one number somebody is being asked to stand behind must
+     not be the hardest thing on the panel to read. */
+  .lock-figure { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+  .lock-figure-score {
+    font-family: var(--font-display);
+    font-size: 26px; font-weight: 700; line-height: 1;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  /* --text-secondary, not --text-muted: muted measures around 4:1 on a tinted
+     bar like this one and doesn't clear AA at this size. Same finding as
+     .cert-catchup-why just above. */
+  .lock-figure-max { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .lock-figure-note { font-size: 13px; color: var(--text-primary); }
   /* First screen anyone sees, and the only one shown to someone who isn't signed
      in yet — so it's treated as a front door rather than a placeholder. */
   .signed-out-lock {
@@ -2934,6 +2967,11 @@
               Every section scored 6 or higher
             </label>
             <div id="g-cert-preview" class="cert-preview hidden"></div>
+            <!-- Filled by renderLockGate(). Deliberately BELOW the cert
+                 preview: the preview says what this score is about to do to
+                 the Dashboard, and that is the last thing somebody should read
+                 before committing to it. -->
+            <div id="g-lock-gate"></div>
           </div>
           <div class="field">
             <label for="g-feedback">Manual feedback <span class="field-optional">(optional — not needed for AI grading)</span></label>
@@ -4185,6 +4223,12 @@ function applySessionTypeToForm(liveTab) {
   // warning both have to be re-evaluated against the tab now in front.
   if (rosterRows.length) populateTraineeDropdown();
   renderPrereqGate();
+  /* Here and not only in resetGradingPanel(), which is skipped when the tab
+     being opened is already the session type in front — on a first visit to the
+     Training Day tab that is the normal case, and the gate would never have
+     been drawn at all. The grade cap also moves with the tab, so a decision
+     locked on another rubric's scale has to be re-read against this one. */
+  renderLockGate();
 }
 
 function resetGradingPanel() {
@@ -4194,7 +4238,15 @@ function resetGradingPanel() {
   // reset() puts the picker back on its placeholder but leaves the "not listed"
   // box showing, so it's told to catch up.
   syncGraderOtherField(false);
+  // Dropped the same way prereqOverride is, and for the same reason: a decision
+  // made about one person on one tab means nothing on the next. Cleared BEFORE
+  // the gate is re-drawn, and after the force-enable above, so the grade box
+  // and the sections tick come back editable rather than frozen by a lock that
+  // no longer exists.
+  humanScoreDecision = null;
+  humanScoreBlockedSubmit = false;
   renderCertPreview();
+  renderLockGate();
   // reset() empties the file input silently, so the cost line for a file that
   // is no longer chosen has to be cleared by hand.
   audioPlan = null;
@@ -6474,6 +6526,7 @@ function checkIcon() { return '<svg viewBox="0 0 20 20" fill="none"><path d="M4 
 function xIcon() { return '<svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>'; }
 function dashIcon() { return '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3" fill="currentColor"/></svg>'; }
 function alertIcon() { return '<svg viewBox="0 0 20 20" fill="none"><path d="M10 2.6 18.4 17.2H1.6L10 2.6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 8.1v3.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14.5" r="1.05" fill="currentColor"/></svg>'; }
+function lockIcon() { return '<svg viewBox="0 0 20 20" fill="none"><rect x="4" y="8.6" width="12" height="8.4" rx="1.8" stroke="currentColor" stroke-width="1.7"/><path d="M6.9 8.6V6.4a3.1 3.1 0 0 1 6.2 0v2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'; }
 function trashIcon() { return '<svg viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6M6 6l.6 9.2A1.5 1.5 0 0 0 8.1 16.6h3.8a1.5 1.5 0 0 0 1.5-1.4L14 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function escapeHtml(s) { return (s || '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -6621,7 +6674,14 @@ populateGraderDropdown();
     // Nobody graded it, so there are no sections to vouch for.
     allSectionsBox.checked = false;
     allSectionsBox.disabled = checked;
+    // Either way this tick moves, any decision already made about the human
+    // score is about a form that no longer exists — ticking it wipes the grade
+    // this was locked on, and unticking re-opens a box that was settled.
+    // renderLockGate() takes the two fields' enabled state back over from here.
+    humanScoreDecision = null;
+    humanScoreBlockedSubmit = false;
     renderCertPreview();
+    renderLockGate();
   });
 })();
 
@@ -6876,7 +6936,12 @@ function renderCertPreview() {
   if (!el) return;
   const name = document.getElementById('g-trainee').value.trim();
   const gradeInput = document.getElementById('g-grade');
-  const rawGrade = gradeInput.disabled ? '' : gradeInput.value.trim();
+  /* Reads the "no one attended" tick by name rather than testing whether the
+     input is disabled, which is what this used to do. The lock gate freezes
+     that same input on a locked score — so the old test would have HIDDEN this
+     preview at the exact moment it matters most, the moment somebody commits
+     to the figure that signs a person off. */
+  const rawGrade = noManualGraderDeclared() ? '' : gradeInput.value.trim();
   const ticked = document.getElementById('g-all-sections-pass').checked;
   const sessionType = currentSessionType;
   const threshold = SESSION_PASS_THRESHOLD[sessionType];
@@ -7112,10 +7177,245 @@ function renderPrereqGate({ alarm = false } = {}) {
   }
 }
 
+/* ---------------- Locking in the human grade ----------------
+   Nothing is submitted until the human side of the session has been settled one
+   way or the other: a score typed in and locked, or an explicit "there is no
+   human score for this one".
+
+   WHY A LOCK AND NOT JUST A NUMBER IN A BOX. The entire value of a human grade
+   to this project is that it was reached WITHOUT having seen the AI's. Phases 2
+   and 3 are "refine the prompt until the AI lines up with the district
+   manager", and a figure written down after reading the AI's card measures
+   nothing — it has already been anchored by the very thing it is supposed to be
+   checking. The app had no defence against that at all: upload, read the
+   verdict, then record what you "would have" given.
+
+   THE GATE COVERS EVERY SUBMISSION, not only the ones with a number already
+   typed in — Jordan's call, asked and answered. That is the half that actually
+   closes the hole: gating only on a typed number leaves "leave the box blank
+   and come back afterwards" completely open, which is the easy route to exactly
+   the problem this exists to stop. So a blank box has to be a stated decision.
+
+   It is a GUARDRAIL, NOT AN AUDIT TRAIL. The decision is front-end only and is
+   deliberately not written to the Grading Log — the same call the prerequisite
+   override got, and column Z is in any case the last column the sheet's
+   single-letter A1 ranges can take. "Who locked what, when" is a different ask;
+   offer it if it ever comes up. */
+
+// Scoped to the person AND the session type it was made for, exactly like
+// prereqOverride. A decision about one person on one tab must not carry to the
+// next person picked, to the other tab, or past a successful submission — each
+// of those re-draws the gate, which is what drops a stale decision.
+let humanScoreDecision = null;   // { name, sessionType, kind:'locked'|'none', grade, sections }
+let humanScoreBlockedSubmit = false;
+
+function sameGatedName(a, b) {
+  return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+}
+
+// The decision in force for the form exactly as it stands, or null.
+function currentHumanScoreDecision() {
+  if (!humanScoreDecision) return null;
+  if (humanScoreDecision.sessionType !== currentSessionType) return null;
+  const name = document.getElementById('g-trainee').value.trim();
+  if (!sameGatedName(humanScoreDecision.name, name)) return null;
+  return humanScoreDecision;
+}
+
+/* Ticking "no one attended to grade this manually" IS the statement this gate
+   is asking for, so it settles it on its own. Read rather than copied into a
+   second flag: two stored booleans both meaning "there is no human score" is
+   how they end up disagreeing. */
+function noManualGraderDeclared() {
+  const el = document.getElementById('g-did-not-attend');
+  return !!el && el.checked;
+}
+
+function humanScoreSettled() {
+  return noManualGraderDeclared() || !!currentHumanScoreDecision();
+}
+
+/* Draw the gate under the manual grade. `alarm` is set only when a Submit was
+   actually stopped: that is when it goes to full weight, announces itself and
+   scrolls into view. The scroll is plain, with no `behavior: 'smooth'`, for the
+   reason recorded on the un-certify offer — smooth scrolling is a silent no-op
+   in some browsers, and a notice whose whole job is to be seen must not ride on
+   one. */
+function renderLockGate({ alarm = false } = {}) {
+  const el = document.getElementById('g-lock-gate');
+  if (!el) return;
+  const gradeInput = document.getElementById('g-grade');
+  const sectionsBox = document.getElementById('g-all-sections-pass');
+
+  // A decision belonging to a different person or a different tab is stale by
+  // definition — same rule, and same place in the function, as renderPrereqGate.
+  if (humanScoreDecision && !currentHumanScoreDecision()) {
+    humanScoreDecision = null;
+    humanScoreBlockedSubmit = false;
+  }
+  const decision = currentHumanScoreDecision();
+  const dna = noManualGraderDeclared();
+
+  /* This function OWNS whether the two manual-grade controls are editable,
+     because two different things freeze them — a decision here, and the "no one
+     attended" tick — and letting each set them on its own is how one ends up
+     re-enabling a field the other had deliberately frozen. Both kinds of
+     decision freeze them: a locked score must not be edited afterwards, and
+     neither must a score typed in UNDER a "there is no human score" declaration,
+     which would otherwise be filed while the gate said there was nothing to
+     file. */
+  const frozen = dna || !!decision;
+  gradeInput.disabled = frozen;
+  sectionsBox.disabled = frozen;
+
+  const max = SESSION_MAX_POSSIBLE[currentSessionType] || 110;
+  const raw = gradeInput.value.trim();
+  const typedNum = Number(raw);
+  const typedOk = raw !== '' && Number.isFinite(typedNum) && typedNum >= 0 && typedNum <= max;
+  const blocked = humanScoreBlockedSubmit && !humanScoreSettled();
+
+  let tone = '';
+  let icon = lockIcon();
+  let title = '';
+  let body = '';
+  let actions = '';
+
+  if (dna) {
+    tone = ' done';
+    icon = checkIcon();
+    title = 'No human grade on this one';
+    body = `<div class="lock-figure-note">You've ticked <strong>no one attended to grade this manually</strong> ` +
+      `further up, so there is nothing to lock in. The AI's read will be the only one on this session, ` +
+      `and nothing goes on the Roster.</div>`;
+  } else if (decision && decision.kind === 'none') {
+    tone = ' done';
+    icon = checkIcon();
+    title = 'No human grade on this one';
+    body = `<div class="lock-figure-note">Recorded as AI feedback only. Nothing goes on the Roster, and the ` +
+      `Passed column stays empty for this session.</div>`;
+    actions = `<button type="button" class="btn ghost" id="g-lock-undo">Add a score</button>`;
+  } else if (decision) {
+    tone = ' done';
+    icon = checkIcon();
+    title = 'Human grade locked in';
+    body =
+      `<div class="lock-figure">` +
+        `<span class="lock-figure-score">${escapeHtml(decision.grade)}</span>` +
+        `<span class="lock-figure-max">out of ${max}</span>` +
+      `</div>` +
+      `<div class="lock-figure-note">Every section 6 or higher: ` +
+        `<strong>${decision.sections ? 'yes' : 'not ticked'}</strong></div>` +
+      `<div class="lock-figure-note">This is the figure that gets filed, whatever the AI comes back with.</div>`;
+    actions = `<button type="button" class="btn ghost" id="g-lock-undo" ` +
+      `aria-label="Unlock the human grade so it can be changed">Unlock</button>`;
+  } else {
+    title = 'Lock in the human grade first';
+    if (raw !== '' && !typedOk) {
+      body = `<div class="lock-figure-note">The grade has to be between 0 and ${max} for a ` +
+        `${escapeHtml(currentSessionType)} before it can be locked in.</div>`;
+    } else if (typedOk) {
+      body = `<div class="lock-figure-note">Locking it is what makes it worth having: the human figure goes ` +
+        `down before the AI's exists, so the AI's read can't move it. You can unlock it any time before ` +
+        `you press Submit.</div>`;
+    } else {
+      body = `<div class="lock-figure-note">This has to be settled before the session is submitted — either ` +
+        `type a grade above and lock it in, or say there isn't one. The human figure goes down before the ` +
+        `AI's exists, so the AI's read can't move it.</div>`;
+    }
+    /* The primary/ghost split here is deliberate and DIFFERS from the un-certify
+       bar, whose note says neither answer gets promoted. That bar asks a
+       question the app genuinely cannot answer; this one has a normal path
+       (lock the score in) and an exception (there isn't one), so the normal path
+       looks like the normal path.
+
+       "No human score" can't be pressed while a grade is typed in, rather than
+       silently wiping it: a number somebody has just typed is not something to
+       throw away on a click meant to say something else. */
+    actions =
+      `<button type="button" class="btn" id="g-lock-in"${typedOk ? '' : ' disabled'}>` +
+        (typedOk ? `Lock in ${escapeHtml(raw)} of ${max}` : 'Lock in this score') +
+      `</button>` +
+      `<button type="button" class="btn ghost" id="g-lock-none"${raw === '' ? '' : ' disabled'} ` +
+        `title="${raw === '' ? 'Nobody graded this session by hand' : 'Clear the grade box first'}">` +
+        `No human score</button>`;
+  }
+
+  el.innerHTML =
+    `<div class="alert-bar inline-gate${tone}${blocked ? '' : ' quiet'}` +
+      `${blocked && alarm ? ' is-new' : ''}" id="g-lock-bar">` +
+      `<div class="alert-bar-icon">${icon}</div>` +
+      `<div class="alert-bar-body">` +
+        `<div class="alert-bar-title">${title}</div>` +
+        body +
+        (blocked
+          ? `<div class="notice-err">Submit stopped — lock the human grade in, or say there isn't one.</div>`
+          : '') +
+        (actions ? `<div class="notice-actions">${actions}</div>` : '') +
+      `</div>` +
+    `</div>`;
+
+  const lockBtn = el.querySelector('#g-lock-in');
+  if (lockBtn) lockBtn.addEventListener('click', () => {
+    const now = gradeInput.value.trim();
+    const n = Number(now);
+    if (now === '' || !Number.isFinite(n) || n < 0 || n > max) return;
+    humanScoreDecision = {
+      name: document.getElementById('g-trainee').value.trim(),
+      sessionType: currentSessionType,
+      kind: 'locked',
+      // The raw string, not the number: submit compares it against the field
+      // character for character, so a lock on "07" can't pass as a 7.
+      grade: now,
+      sections: sectionsBox.checked
+    };
+    humanScoreBlockedSubmit = false;
+    renderLockGate();
+  });
+
+  const noneBtn = el.querySelector('#g-lock-none');
+  if (noneBtn) noneBtn.addEventListener('click', () => {
+    // Nothing to vouch for when there's no score, so the sections tick goes too
+    // — the same clearing the "no one attended" handler does, for the same
+    // reason: a stray tick is half of a certification rule.
+    sectionsBox.checked = false;
+    humanScoreDecision = {
+      name: document.getElementById('g-trainee').value.trim(),
+      sessionType: currentSessionType,
+      kind: 'none'
+    };
+    humanScoreBlockedSubmit = false;
+    renderLockGate();
+    renderCertPreview();
+  });
+
+  const undoBtn = el.querySelector('#g-lock-undo');
+  if (undoBtn) undoBtn.addEventListener('click', () => {
+    humanScoreDecision = null;
+    humanScoreBlockedSubmit = false;
+    renderLockGate();
+    renderCertPreview();
+    // Straight back to the box they're here to change, which is the only reason
+    // either of these buttons gets pressed.
+    const box = document.getElementById('g-grade');
+    if (box && !box.disabled) box.focus();
+  });
+
+  if (alarm && blocked) {
+    const bar = document.getElementById('g-lock-bar');
+    bar.setAttribute('role', 'alert');
+    bar.scrollIntoView({ block: 'center' });
+  }
+}
+
 ['g-trainee', 'g-grade', 'g-all-sections-pass'].forEach(id => {
   const el = document.getElementById(id);
   el.addEventListener('input', renderCertPreview);
   el.addEventListener('change', renderCertPreview);
+  // The gate's own buttons depend on what is in the grade box — whether there's
+  // a lockable number, and whether "no human score" is still available — so it
+  // re-draws alongside the preview.
+  el.addEventListener('input', () => renderLockGate());
+  el.addEventListener('change', () => renderLockGate());
 });
 document.getElementById('g-trainee').addEventListener('change', () => renderPrereqGate());
 // V16: what the AI is about to do with the recording, and what it'll cost,
@@ -7207,6 +7507,36 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       statusEl.className = 'err';
       return;
     }
+  }
+  /* The human side has to be settled before anything leaves this page — see the
+     note on renderLockGate. Checked AFTER the form-completeness rules, because
+     a completely empty form has a better message waiting for it than this one,
+     and BEFORE ensureFreshToken, so a stopped submit costs no Drive round trip,
+     no Gemini passes and no sheet write. The reason goes in the bar next to the
+     buttons that clear it, not in a status line at the far end of the form. */
+  const gateDecision = currentHumanScoreDecision();
+  const gatedGrade = gateDecision
+    ? (gateDecision.kind === 'locked' ? gateDecision.grade : '')
+    : null;
+  if (gateDecision && gatedGrade !== rawGradeVal) {
+    /* Can't happen while the gate holds both controls frozen, and that is
+       exactly why it is worth checking: the day something re-enables that
+       input, the figure submitted would quietly stop being the figure that was
+       locked — and nothing on screen would look wrong. Drop the decision rather
+       than trust either value. */
+    humanScoreDecision = null;
+    humanScoreBlockedSubmit = true;
+    statusEl.textContent = '';
+    statusEl.className = '';
+    renderLockGate({ alarm: true });
+    return;
+  }
+  if (!humanScoreSettled()) {
+    humanScoreBlockedSubmit = true;
+    statusEl.textContent = '';
+    statusEl.className = '';
+    renderLockGate({ alarm: true });
+    return;
   }
   if (!(await ensureFreshToken())) return;
 
@@ -7379,6 +7709,12 @@ document.getElementById('grading-form').addEventListener('submit', async (e) => 
       prereqOverride = null;
       prereqBlockedSubmit = false;
       renderPrereqGate();
+      // Same for the locked grade: it belonged to the session just filed. Left
+      // standing, the next session on this tab would submit under a lock that
+      // was never about it — which is the one thing this gate exists to stop.
+      humanScoreDecision = null;
+      humanScoreBlockedSubmit = false;
+      renderLockGate();
     }
     loadRecentLog();
 
